@@ -251,6 +251,8 @@ window.BTCM_APP = (function () {
     window.addEventListener('resize', () => { dirty = true; });
     new ResizeObserver(() => { dirty = true; }).observe($('chartwrap'));
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { dirty = true; });
+    // the canvases draw with Barlow Condensed: load its weights explicitly, then redraw
+    if (document.fonts && document.fonts.load) Promise.all([500, 600, 700].map(w => document.fonts.load(`${w} 12px "Barlow Condensed"`))).then(() => { dirty = true; }, () => {});
     renderLogo();
     // zoom with the mouse wheel
     $('chartwrap').addEventListener('wheel', (e) => { e.preventDefault(); const v = Math.round(chart.visible * (e.deltaY > 0 ? 1.15 : 0.87)); chart.visible = osc.visible = Math.max(40, Math.min(state.candles.length || 900, v)); dirty = true; }, { passive: false });

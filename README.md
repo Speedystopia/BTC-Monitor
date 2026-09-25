@@ -178,6 +178,7 @@ btc-monitor/
 │   ├── engine.js             prix indice, bougies live, carnet agrégé, feed, liquidations, messages
 │   └── heatmap.js            heatmap de liquidité (colonnes par minute, agrégation par bougie, sauvegarde)
 ├── public/                   interface (index.html, styles.css, chart.js, app.js, sessions.js, audio.js, util.js)
+│   └── fonts/                polices Barlow / Barlow Condensed servies localement (licence SIL OFL, OFL.txt)
 ├── tools/build-exe.js        construction de BTC-Monitor.exe (esbuild + Node SEA + postject)
 ├── test/run.js               tests (npm test)
 └── .github/workflows/ci.yml  intégration continue (tests sur Node 18 à 24)
