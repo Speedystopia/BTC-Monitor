@@ -76,4 +76,4 @@ async function history(symbol, tf, limit) {
   return Array.from(out.values()).sort((a, b) => a.t - b.t);
 }
 
-module.exports = { start, history, parse };
+module.exports = { start, history, parse, tickers: true }; // tickers: can stream config.assets

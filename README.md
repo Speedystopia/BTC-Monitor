@@ -29,7 +29,7 @@ démarre le mode simulation (marché synthétique, sans internet).
   cliquer sur *Informations complémentaires* → *Exécuter quand même*. (`BTC-Monitor.exe` est le node.exe
   officiel de nodejs.org dans lequel le programme est injecté, voir `tools/build-exe.js` ; `npm run build:exe`
   le reconstruit.)
-* Options en ligne de commande : `BTC-Monitor.exe --sim`, `--port 9000`, `--no-open`.
+* Options en ligne de commande : `BTC-Monitor.exe --sim`, `--port 9000`, `--host 0.0.0.0`, `--no-open`.
 
 **macOS / Linux** : double-cliquer sur `start.command` (macOS) ou lancer `./start.sh` — Node.js ≥ 18 requis
 (https://nodejs.org) ; les dépendances s'installent seules au premier lancement.
@@ -83,6 +83,10 @@ Autres commandes :
 3. URL : `http://localhost:8787` (ou `http://localhost:8787/?tf=15m` pour un autre timeframe) — largeur 1920, hauteur 1080.
 4. Cocher *Contrôler l'audio via OBS* pour entendre les alertes sonores dans le flux.
 
+OBS sur un **second PC** : le serveur n'écoute par défaut que sur l'ordinateur local (`host: '127.0.0.1'`).
+Mettre `host: '0.0.0.0'` dans `config.js` (ou lancer avec `--host 0.0.0.0`), autoriser le programme dans le
+pare-feu, puis utiliser `http://<adresse IP du PC qui fait tourner BTC Monitor>:8787` dans OBS.
+
 ---
 
 ## 2. Configuration — `config.js`
@@ -92,6 +96,7 @@ Tout se règle dans `config.js` (redémarrer le serveur après modification).
 | Section | Réglages principaux |
 |---|---|
 | `port` | port HTTP / WebSocket du tableau de bord |
+| `host` | interface d'écoute : `127.0.0.1` (défaut, cet ordinateur uniquement, pas d'alerte du pare-feu) ou `0.0.0.0` (accessible depuis le réseau local, ex. OBS sur un autre PC) |
 | `chartTimeframe` | timeframe affiché quand la page est ouverte sans `?tf=` (défaut `5m`) |
 | `chartTimeframes` | timeframes disponibles en pages : `1m 3m 5m 15m 1h 4h 8h 12h 1d` |
 | `icons` | logos : téléchargés une fois depuis GitHub (organisations officielles des exchanges, dépôt `spothq/cryptocurrency-icons` pour les cryptos) dans `data/icons/`, sinon monogrammes intégrés |

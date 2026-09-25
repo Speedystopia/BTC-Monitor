@@ -29,14 +29,22 @@ const { IconStore } = require('./icons');
 const feeds = require('./feeds');
 
 const args = process.argv.slice(1).filter(a => a !== process.execPath && !/[\\/]index\.js$/.test(a));
+/** Value of `--name value` or `--name=value`. */
+const argValue = (name) => { const i = args.indexOf(name); if (i >= 0) return args[i + 1]; const a = args.find(x => x.startsWith(name + '=')); return a ? a.slice(name.length + 1) : undefined; };
 const SIM = args.includes('--sim') || process.env.SIM === '1';
-const portArg = args.indexOf('--port');
-const PORT = +(portArg >= 0 ? args[portArg + 1] : process.env.PORT || config.port || 8787);
 const OPEN = args.includes('--open') || (IS_EXE && !args.includes('--no-open'));
 
 const ts = () => new Date().toISOString().slice(11, 19);
 const log = (tag) => (msg) => console.log(`${ts()} [${tag}] ${msg}`);
 const mainLog = log('server');
+
+const portRaw = argValue('--port') || process.env.PORT || config.port || 8787;
+let PORT = Number(portRaw);
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) { mainLog(`invalid port "${portRaw}", using 8787`); PORT = 8787; }
+// 127.0.0.1 = this computer only; '0.0.0.0' = also reachable from the network (e.g. OBS on a second PC)
+const HOST = argValue('--host') || config.host || '127.0.0.1';
+const ANY_OR_LOOPBACK = /^(0\.0\.0\.0|::|127\.\d+\.\d+\.\d+|::1|localhost)$/;
+const URL_BASE = `http://${ANY_OR_LOOPBACK.test(HOST) ? 'localhost' : HOST.includes(':') ? `[${HOST}]` : HOST}:${PORT}`;
 
 net.configure(config);
 const engine = new Engine(config);
@@ -121,6 +129,11 @@ async function startLive() {
   mainLog('history sources — ' + Object.keys(hist).map(tf => `${tf}:${count(tf)}`).join(' '));
   if (!count('5m') && !count('1m')) mainLog('WARNING: no candle history could be loaded; the chart will build from live trades only');
   engine.seedHistory(hist);
+  // crypto assets are streamed by their exchange adapter: say so when that exchange cannot provide them
+  for (const a of config.assets || []) {
+    const ok = a.source === 'yahoo' || (enabled.some(([id]) => id === a.source) && feeds[a.source].tickers);
+    if (!ok) mainLog(`WARNING: asset ${a.label} uses source "${a.source}", which is not an enabled exchange with tickers (binance, coinbase) nor "yahoo": it will not update`);
+  }
 
   for (const [id, exCfg] of enabled) {
     const assets = (config.assets || []).filter(a => a.source === id);
@@ -151,14 +164,15 @@ function startSim() {
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
     mainLog(`port ${PORT} is already in use — is BTC Monitor already running? (try --port 8788)`);
-    if (OPEN) openBrowser(`http://localhost:${PORT}/`);
+    if (OPEN) openBrowser(`${URL_BASE}/`);
   } else mainLog('server error: ' + e.message);
   setTimeout(() => process.exit(1), IS_EXE ? 8000 : 0);
 });
-server.listen(PORT, () => {
+server.listen(PORT, HOST, () => {
   if (IS_EXE) mainLog(`BTC Monitor executable — folder: ${ROOT}`);
-  mainLog(`dashboard: http://localhost:${PORT}  (timeframes: ${engine.chartTfs.map(tf => `?tf=${tf}`).join(' ')})`);
-  if (OPEN) { openBrowser(`http://localhost:${PORT}/`); mainLog('opening the dashboard in your browser… keep this window open while streaming'); }
+  mainLog(`dashboard: ${URL_BASE}  (timeframes: ${engine.chartTfs.map(tf => `?tf=${tf}`).join(' ')})`);
+  if (!/^(127\.|::1$|localhost$)/.test(HOST)) mainLog(`listening on ${HOST}: other devices of the network can open the dashboard`);
+  if (OPEN) { openBrowser(`${URL_BASE}/`); mainLog('opening the dashboard in your browser… keep this window open while streaming'); }
   setInterval(() => engine.tick(), 250);
   if (SIM) startSim(); else startLive().catch(e => { mainLog('startup error: ' + e.stack); });
 });

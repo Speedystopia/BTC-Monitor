@@ -5,6 +5,9 @@
 module.exports = {
   // HTTP/WebSocket port of the dashboard (open http://localhost:8787)
   port: 8787,
+  // Network interface: '127.0.0.1' = this computer only (no firewall prompt);
+  // '0.0.0.0' = also reachable from the local network (e.g. OBS running on a second PC)
+  host: '127.0.0.1',
 
   // Timeframe shown when the page is opened without ?tf=...  (each page = one timeframe:
   // http://localhost:8787/?tf=1m  ?tf=3m  ?tf=5m  ?tf=15m  ?tf=1h  ?tf=4h  ?tf=8h  ?tf=12h  ?tf=1d)

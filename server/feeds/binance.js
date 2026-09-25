@@ -114,4 +114,4 @@ async function history(symbol, tf, limit) {
   return rows.map(r => ({ t: r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5], bv: +r[9] }));
 }
 
-module.exports = { start, startLiquidations, history, parse };
+module.exports = { start, startLiquidations, history, parse, tickers: true }; // tickers: can stream config.assets
