@@ -186,6 +186,38 @@ test('simulator seeds all timeframes and runs the analysis', () => {
   assert.strictEqual(engine.scanner.length, 13); assert.strictEqual(engine.pct.length, 7);
 });
 
+group('server (integration)');
+const freePort = () => new Promise((resolve) => { const s = require('net').createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); }); });
+const waitFor = async (cond, ms) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > ms) throw new Error('timed out'); await new Promise(r => setTimeout(r, 50)); } };
+const httpGet = (port, p) => new Promise((resolve, reject) => {
+  const req = require('http').get({ host: '127.0.0.1', port, path: p, timeout: 5000 }, (res) => { let body = ''; res.on('data', d => { body += d; }); res.on('end', () => resolve({ status: res.statusCode, body })); });
+  req.on('timeout', () => req.destroy(new Error('no response for ' + p))); req.on('error', reject);
+});
+test('server answers bad timeframes, malformed URLs and traversal attempts', async () => {
+  const port = await freePort();
+  const child = require('child_process').spawn(process.execPath, [require('path').join(__dirname, '..', 'server', 'index.js'), '--sim', '--port', String(port)], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = ''; child.stdout.on('data', d => { out += d; }); child.stderr.on('data', d => { out += d; });
+  try {
+    await waitFor(() => /dashboard: /.test(out), 15000);
+    const state = async (q) => JSON.parse((await httpGet(port, '/api/state' + q)).body).meta.tf;
+    assert.strictEqual(await state('?tf=__proto__'), '5m');
+    assert.strictEqual(await state('?tf=constructor'), '5m');
+    assert.strictEqual(await state('?tf=1h'), '1h');
+    assert.strictEqual((await httpGet(port, '/%E0%A4%A')).status, 400);
+    assert.strictEqual((await httpGet(port, '/icons/__proto__')).status, 404);
+    assert.ok([403, 404].includes((await httpGet(port, '/core/..%2fconfig.js')).status));
+    assert.strictEqual((await httpGet(port, '/')).status, 200);
+    const snap = await new Promise((resolve, reject) => {
+      const ws = new (require('ws'))(`ws://127.0.0.1:${port}/ws?tf=constructor`);
+      const to = setTimeout(() => { ws.terminate(); reject(new Error('no snapshot over the websocket')); }, 5000);
+      ws.on('message', (d) => { const m = JSON.parse(d); if (m.type === 'snapshot') { clearTimeout(to); ws.close(); resolve(m); } });
+      ws.on('error', reject);
+    });
+    assert.strictEqual(snap.meta.tf, '5m');
+    assert.ok(!/\[fatal\]/.test(out), 'server logged a fatal error:\n' + out);
+  } finally { child.kill('SIGKILL'); }
+});
+
 (async () => {
   let passed = 0, failed = 0;
   for (const q of queue) {

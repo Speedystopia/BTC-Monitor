@@ -202,7 +202,7 @@ window.BTCM_APP = (function () {
   function connectLocal(opts) {
     const B = window.BTCM; if (!B || !B.engine || !B.sim) { console.error('core modules missing'); return null; }
     const engine = new B.engine.Engine(opts.config || {});
-    localCtx = { engine, tf: engine.tfState[pageTf()] ? pageTf() : engine.chartTf };
+    localCtx = { engine, tf: engine.hasTf(pageTf()) ? pageTf() : engine.chartTf };
     engine.on('message', (m) => { if (m.tf && m.tf !== localCtx.tf) return; handle(m); });
     const sim = new B.sim.Simulator(engine, { price: opts.price || 78600, assets: (opts.config && opts.config.assets || []).map(a => a.label) });
     sim.seed(); sim.start();
@@ -212,7 +212,7 @@ window.BTCM_APP = (function () {
   }
   /** Demo only: switch the timeframe in place (no page reload). */
   function switchLocalTf(tf) {
-    if (!localCtx || !localCtx.engine.tfState[tf]) return;
+    if (!localCtx || !localCtx.engine.hasTf(tf)) return;
     localCtx.tf = tf; handle(localCtx.engine.snapshot(tf));
     try { history.replaceState(null, '', '?tf=' + tf); } catch (e) { /* ignore */ }
   }

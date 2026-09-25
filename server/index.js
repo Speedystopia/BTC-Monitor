@@ -43,7 +43,7 @@ const engine = new Engine(config);
 const icons = new IconStore(ROOT, config, log('icons'));
 engine.icons = icons.urls();
 icons.refresh().then((map) => { engine.icons = map; mainLog(`icons ready: ${Object.keys(map).join(', ') || 'none (fallback monograms)'}`); }).catch(() => {});
-const tfOf = (url) => { const tf = (url.searchParams.get('tf') || '').toLowerCase(); return engine.tfState[tf] ? tf : engine.chartTf; };
+const tfOf = (url) => { const tf = (url.searchParams.get('tf') || '').toLowerCase(); return engine.hasTf(tf) ? tf : engine.chartTf; };
 
 // ---------------------------------------------------------------- liquidation persistence
 const liqFile = path.join(ROOT, SIM ? 'data/liquidations-sim.json' : ((config.liquidations && config.liquidations.storeFile) || 'data/liquidations.json'));
@@ -64,7 +64,8 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/state') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(engine.snapshot(tfOf(url)))); }
   if (url.pathname.startsWith('/icons/')) return icons.serve(url.pathname.slice(7).replace(/[^a-z0-9_-]/gi, ''), res);
   if (url.pathname === '/api/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: true, mode: engine.mode, price: engine.index, status: engine.statusState() })); }
-  let file = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname);
+  let file;
+  try { file = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400); return res.end('bad request'); }
   if (file.includes('..')) { res.writeHead(403); return res.end('forbidden'); }
   const rel = file.startsWith('/core/') ? file.slice(1) : 'public' + file;
   readStatic(rel, (err, data) => {
@@ -74,22 +75,23 @@ const server = http.createServer((req, res) => {
   });
 });
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 }); // clients only send tiny control messages
 wss.on('connection', (ws, req) => {
   ws.isAlive = true;
   ws.tf = tfOf(new URL(req.url, 'http://localhost')); // one page = one timeframe (?tf=15m)
   ws.on('pong', () => { ws.isAlive = true; });
+  ws.on('error', () => { /* the socket is closed right after; nothing else to do */ });
   ws.on('message', (raw) => {
     try {
       const m = JSON.parse(raw);
-      if (m.type === 'hello' && m.tf && engine.tfState[m.tf]) ws.tf = m.tf;
+      if (m.type === 'hello' && engine.hasTf(m.tf)) ws.tf = m.tf;
       if (m.type === 'snapshot' || m.type === 'hello') ws.send(JSON.stringify(engine.snapshot(ws.tf)));
     } catch (e) { /* ignore */ }
   });
   ws.send(JSON.stringify(engine.snapshot(ws.tf)));
   mainLog(`client connected (${wss.clients.size}) tf=${ws.tf} from ${req.socket.remoteAddress}`);
 });
-setInterval(() => { for (const ws of wss.clients) { if (!ws.isAlive) return ws.terminate(); ws.isAlive = false; ws.ping(); } }, 30000);
+setInterval(() => { for (const ws of wss.clients) { if (!ws.isAlive) { ws.terminate(); continue; } ws.isAlive = false; ws.ping(); } }, 30000);
 engine.on('message', (msg) => {
   if (!wss.clients.size) return;
   let data = null; // serialised lazily: timeframe-specific messages only go to the pages showing that timeframe

@@ -47,7 +47,7 @@ function loadConfig() {
 /** Read a static file: disk first (customisable), then the embedded copy. */
 function readStatic(relPath, cb) {
   const full = path.normalize(path.join(ROOT, relPath));
-  if (!full.startsWith(ROOT)) return cb(new Error('forbidden'));
+  if (!full.startsWith(ROOT + path.sep)) return cb(new Error('forbidden'));
   fs.readFile(full, (err, data) => {
     if (!err) return cb(null, data);
     const emb = embedded(relPath.replace(/\\/g, '/').replace(/^\//, ''));

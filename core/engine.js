@@ -82,6 +82,8 @@
     }
 
     // ------------------------------------------------------------------ helpers
+    /** True for a chart timeframe of this engine (own keys only: ?tf=__proto__ must not match). */
+    hasTf(tf) { return typeof tf === 'string' && Object.prototype.hasOwnProperty.call(this.tfState, tf); }
     exchangeName(id) { return EXCHANGE_NAMES[id] || id; }
     registerExchange(id, opts) {
       if (!this.ex[id]) this.ex[id] = { id, name: this.exchangeName(id), last: 0, ts: 0, vol: 0, volTs: 0, quote: USDT_QUOTED[id] ? 'USDT' : 'USD', status: 'connecting', trades: 0 };
@@ -380,7 +382,7 @@
     }
     /** Chart series + analysis for one timeframe (last `chartCandles` candles). */
     analysisMessage(tf) {
-      tf = this.tfState[tf] ? tf : this.chartTf;
+      tf = this.hasTf(tf) ? tf : this.chartTf;
       const s = this.series[tf]; const a = this.tfState[tf].analysis;
       const candles = s.candles; const start = Math.max(0, candles.length - this.chartCandles);
       const rows = [];
@@ -388,7 +390,7 @@
       return { type: 'analysis', tf, tfMs: s.tfMs, candles: rows, zones: a ? a.zones : null, markers: a ? a.markers : [], pending: a ? a.pending : null, condition: a ? a.condition : null, base: this.historyBases ? this.historyBases[tf] : null };
     }
     snapshot(tf) {
-      tf = this.tfState[tf] ? tf : this.chartTf;
+      tf = this.hasTf(tf) ? tf : this.chartTf;
       return {
         type: 'snapshot',
         meta: { symbol: this.cfg.symbolLabel || 'Bitcoin / U.S. Dollar', tf, tfMs: C.TIMEFRAMES[tf], timeframes: this.chartTfs, mode: this.mode, visibleCandles: this.cfg.visibleCandles || 300, indicators: this.icfg, orderBook: this.obcfg, alerts: this.cfg.alerts || {}, refExchange: this.refExchange, icons: this.icons || {} },
