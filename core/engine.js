@@ -66,7 +66,7 @@
       this.levelSince = new Map();   // level key -> first time it exceeded the threshold
       this.tradeRows = [];           // recent large trades
       this._lastFeedAt = 0; this._feedSig = '';
-      this.liqEvents = [];    // rolling 24h
+      this._resetLiquidations(); // rolling 24h, per-minute buckets
       this.assets = {};       // label -> {label, price, pct, ts}
       this.calendar = { events: [], next: null, updatedAt: 0 };
       this.statusExtra = {};
@@ -240,22 +240,53 @@
     }
 
     // ------------------------------------------------------------------ liquidations
+    // Rolling 24h window aggregated per minute: O(1) per event (no rescan of the day), small store.
+    _resetLiquidations() { this.liq = { buckets: new Map(), long: 0, short: 0, count: 0, first: null, recent: [], cutMin: -Infinity }; }
     onLiquidation(id, ev) {
       const now = this.now();
       const usd = ev.usd || (ev.price * ev.qty);
       if (!(usd > 0)) return;
       const e = { ex: id, side: ev.side, price: ev.price, qty: ev.qty || usd / ev.price, usd, ts: ev.ts || now };
-      this.liqEvents.push(e);
       this.pruneLiquidations(now);
+      if (!this._addLiquidation(e)) return; // older than the window
       this.emit('message', { type: 'liq', event: e, totals: this.liqTotals() });
-      this.emit('liq_persist', this.liqEvents);
+      this.emit('liq_persist');
     }
-    loadLiquidations(events) { if (Array.isArray(events)) { this.liqEvents = events.filter(e => e && e.usd > 0 && e.ts > 0); this.pruneLiquidations(this.now()); } }
-    pruneLiquidations(now) { const cut = now - C.DAY; if (this.liqEvents.length && this.liqEvents[0].ts < cut) this.liqEvents = this.liqEvents.filter(e => e.ts >= cut); }
-    liqTotals() {
-      let long = 0, short = 0;
-      for (const e of this.liqEvents) { if (e.side === 'long') long += e.usd; else short += e.usd; }
-      return { total: long + short, long, short, count: this.liqEvents.length, since: this.liqEvents.length ? this.liqEvents[0].ts : null };
+    _addLiquidation(e) {
+      const L = this.liq, m = Math.floor(e.ts / C.MIN);
+      if (!(m >= L.cutMin)) return false;
+      let b = L.buckets.get(m);
+      if (!b) { b = [0, 0, 0]; L.buckets.set(m, b); if (L.first == null || m < L.first) L.first = m; } // [long usd, short usd, count]
+      if (e.side === 'long') { b[0] += e.usd; L.long += e.usd; } else { b[1] += e.usd; L.short += e.usd; }
+      b[2]++; L.count++;
+      L.recent.push(e); if (L.recent.length > 25) L.recent.shift();
+      return true;
+    }
+    /** Drop the minutes that left the window (at most once a minute) and re-sum the others (no float drift). */
+    pruneLiquidations(now) {
+      const L = this.liq, cut = Math.floor((now - C.DAY) / C.MIN);
+      if (cut <= L.cutMin) return;
+      L.cutMin = cut; L.long = 0; L.short = 0; L.count = 0; L.first = null;
+      for (const [m, b] of L.buckets) {
+        if (m < cut) { L.buckets.delete(m); continue; }
+        L.long += b[0]; L.short += b[1]; L.count += b[2]; if (L.first == null || m < L.first) L.first = m;
+      }
+      if (L.recent.length && Math.floor(L.recent[0].ts / C.MIN) < cut) L.recent = L.recent.filter(e => Math.floor(e.ts / C.MIN) >= cut);
+    }
+    liqTotals() { const L = this.liq; return { total: L.long + L.short, long: L.long, short: L.short, count: L.count, since: L.first == null ? null : L.first * C.MIN }; }
+    recentLiquidations() { return this.liq.recent.slice().reverse(); } // newest first
+    /** Store format: { v: 2, buckets: [[minute, longUsd, shortUsd, count], ...], recent: [last events] }. */
+    exportLiquidations() { const buckets = []; for (const [m, b] of this.liq.buckets) buckets.push([m, b[0], b[1], b[2]]); return { v: 2, buckets, recent: this.liq.recent }; }
+    /** Restore a store: the format above, or the raw event array written by earlier versions. */
+    loadLiquidations(data) {
+      this._resetLiquidations();
+      const now = this.now(), L = this.liq;
+      this.pruneLiquidations(now); // sets the window start
+      if (Array.isArray(data)) { for (const e of data) if (e && e.usd > 0 && e.ts > 0) this._addLiquidation(e); return; }
+      if (!data || data.v !== 2) return;
+      for (const r of data.buckets || []) if (Array.isArray(r) && r[0] >= L.cutMin && r[1] >= 0 && r[2] >= 0 && r[3] > 0) L.buckets.set(r[0], [r[1], r[2], r[3]]);
+      L.recent = (Array.isArray(data.recent) ? data.recent : []).filter(e => e && e.usd > 0 && Math.floor(e.ts / C.MIN) >= L.cutMin).slice(-25);
+      L.cutMin = -Infinity; this.pruneLiquidations(now); // re-sum the loaded buckets
     }
 
     // ------------------------------------------------------------------ assets / calendar
@@ -397,7 +428,7 @@
         analysis: this.analysisMessage(tf),
         scanner: this.scanner, pct: this.pct,
         book: this.bookProfile(), orders: this.feed,
-        liq: { totals: this.liqTotals(), recent: this.liqEvents.slice(-25).reverse() },
+        liq: { totals: this.liqTotals(), recent: this.recentLiquidations() },
         assets: this.assetList(), calendar: this.calendarState(), status: this.statusState(),
         price: this.index,
       };

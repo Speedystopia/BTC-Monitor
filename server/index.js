@@ -46,16 +46,24 @@ icons.refresh().then((map) => { engine.icons = map; mainLog(`icons ready: ${Obje
 const tfOf = (url) => { const tf = (url.searchParams.get('tf') || '').toLowerCase(); return engine.hasTf(tf) ? tf : engine.chartTf; };
 
 // ---------------------------------------------------------------- liquidation persistence
-const liqFile = path.join(ROOT, SIM ? 'data/liquidations-sim.json' : ((config.liquidations && config.liquidations.storeFile) || 'data/liquidations.json'));
+const liqFile = path.resolve(ROOT, SIM ? 'data/liquidations-sim.json' : ((config.liquidations && config.liquidations.storeFile) || 'data/liquidations.json'));
 try {
-  if (fs.existsSync(liqFile)) { engine.loadLiquidations(JSON.parse(fs.readFileSync(liqFile, 'utf8'))); mainLog(`loaded ${engine.liqEvents.length} liquidation events from store`); }
+  if (fs.existsSync(liqFile)) { engine.loadLiquidations(JSON.parse(fs.readFileSync(liqFile, 'utf8'))); mainLog(`loaded ${engine.liqTotals().count} liquidation events from store`); }
 } catch (e) { mainLog('could not read liquidation store: ' + e.message); }
 let liqDirty = false;
 engine.on('liq_persist', () => { liqDirty = true; });
-setInterval(() => {
+/** Write the store through a temp file + rename: a crash mid-write cannot corrupt it. */
+function saveLiquidations() {
   if (!liqDirty) return; liqDirty = false;
-  try { fs.mkdirSync(path.dirname(liqFile), { recursive: true }); fs.writeFileSync(liqFile, JSON.stringify(engine.liqEvents)); } catch (e) { mainLog('liquidation store write failed: ' + e.message); }
-}, 20000);
+  try {
+    fs.mkdirSync(path.dirname(liqFile), { recursive: true });
+    fs.writeFileSync(liqFile + '.tmp', JSON.stringify(engine.exportLiquidations()));
+    fs.renameSync(liqFile + '.tmp', liqFile);
+  } catch (e) { mainLog('liquidation store write failed: ' + e.message); }
+}
+setInterval(saveLiquidations, 20000);
+// flush on Ctrl+C, on kill, and when the console window is closed (SIGHUP on Windows)
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { saveLiquidations(); process.exit(0); });
 
 // ---------------------------------------------------------------- HTTP static + API
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg' };

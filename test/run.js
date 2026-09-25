@@ -168,6 +168,26 @@ test('engine builds index, candles, feed and liquidations from events', () => {
   const snap = engine.snapshot();
   assert.strictEqual(snap.type, 'snapshot'); assert.ok(snap.analysis.candles.length >= 1);
 });
+test('liquidations: rolling 24h window, store round trip, legacy store format', () => {
+  const t0 = Date.UTC(2026, 8, 20, 12, 0, 0);
+  const engine = new Engine({}); let now = t0; engine.now = () => now;
+  const totals = (e) => { const t = e.liqTotals(); return [t.long, t.short, t.count]; };
+  engine.onLiquidation('a', { side: 'long', price: 100, qty: 2, ts: now - C.DAY - 5 * C.MIN }); // older than the window
+  engine.onLiquidation('a', { side: 'long', price: 100, qty: 2, ts: now - 10 * C.HOUR });
+  engine.onLiquidation('b', { side: 'short', price: 100, qty: 1, ts: now - 5 * C.MIN });
+  engine.onLiquidation('b', { side: 'short', price: 100, usd: 50, ts: now });
+  assert.deepStrictEqual(totals(engine), [200, 150, 3]);
+  const store = JSON.parse(JSON.stringify(engine.exportLiquidations()));
+  now += 15 * C.HOUR; // the 10h-old long is now 25h old
+  engine.onLiquidation('a', { side: 'long', price: 100, qty: 1, ts: now });
+  assert.deepStrictEqual(totals(engine), [100, 150, 3]);
+  const restored = new Engine({}); restored.now = () => t0; restored.loadLiquidations(store);
+  assert.deepStrictEqual(totals(restored), [200, 150, 3]);
+  assert.strictEqual(restored.snapshot().liq.recent[0].usd, 50); // newest first
+  const legacy = new Engine({}); legacy.now = () => now;
+  legacy.loadLiquidations([{ ex: 'a', side: 'long', usd: 10, ts: now - C.HOUR }, { ex: 'a', side: 'short', usd: 5, ts: now - 2 * C.DAY }, null]);
+  assert.deepStrictEqual(totals(legacy), [10, 0, 1]);
+});
 test('baseFor picks the deepest aligned base timeframe', () => {
   const avail = { '1d': [1], '4h': [1], '1h': [1], '15m': [1], '5m': [1], '1m': [1] };
   assert.strictEqual(C.baseFor('8h', avail), '4h'); assert.strictEqual(C.baseFor('12h', avail), '4h'); assert.strictEqual(C.baseFor('6h', avail), '1h');
