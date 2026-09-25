@@ -163,7 +163,8 @@ btc-monitor/
 ├── start.command / start.sh  lanceurs macOS / Linux (Node.js requis)
 ├── config.js                 réglages
 ├── server/
-│   ├── index.js              serveur HTTP + WebSocket, orchestration
+│   ├── index.js              point d'entrée : configuration, sauvegardes, sources de données
+│   ├── http.js               serveur HTTP + WebSocket (fichiers, API, diffusion aux pages, clients lents)
 │   ├── net.js                WebSocket reconnectant, fetch, proxy optionnel
 │   ├── history.js            chargement de l'historique multi-exchanges
 │   ├── calendar.js           calendrier économique

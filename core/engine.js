@@ -500,7 +500,7 @@ module.exports = (function (I, C, A, H) {
         const s = this.series[tf], n = s.candles.length; if (!n) continue;
         const times = closed && n > 1 ? [s.candles[n - 2].t, s.candles[n - 1].t] : [s.candles[n - 1].t];
         const cols = this.heatmap.columns(times, s.tfMs).map(H.encode);
-        if (cols.length) this.emit('message', { type: 'heat', tf, cols });
+        if (cols.length) this.emit('message', { type: 'heat', tf, closed, cols }); // closed: final column of a candle, never skipped
       }
     }
     /** Heatmap of the candles sent to a chart page. */

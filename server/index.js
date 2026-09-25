@@ -12,10 +12,8 @@
 const _emitWarning = process.emitWarning;
 process.emitWarning = function (w, ...rest) { if (typeof w === 'string' && w.includes('single-executable')) return; return _emitWarning.call(process, w, ...rest); };
 
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { WebSocketServer, WebSocket } = require('ws');
 
 const args = process.argv.slice(1).filter(a => a !== process.execPath && !/[\\/]index\.js$/.test(a));
 /** Value of `--name value` or `--name=value`. */
@@ -29,6 +27,7 @@ const { loadHistory } = require('./history');
 const { startCalendar } = require('./calendar');
 const { startAssets } = require('./assets');
 const { startClock } = require('./clock');
+const { createApp } = require('./http');
 const { IconStore } = require('./icons');
 const feeds = require('./feeds');
 
@@ -51,7 +50,6 @@ const engine = new Engine(config);
 const icons = new IconStore(ROOT, config, log('icons'));
 engine.icons = icons.urls();
 icons.refresh().then((map) => { engine.icons = map; mainLog(`icons ready: ${Object.keys(map).join(', ') || 'none (fallback monograms)'}`); }).catch(() => {});
-const tfOf = (url) => { const tf = (url.searchParams.get('tf') || '').toLowerCase(); return engine.hasTf(tf) ? tf : engine.chartTf; };
 
 // ---------------------------------------------------------------- persistence (liquidations, heatmap)
 /** Write a JSON store through a temp file + rename: a crash mid-write cannot corrupt it. */
@@ -80,50 +78,8 @@ setInterval(saveHeatmap, 5 * 60000);
 // flush on Ctrl+C, on kill, and when the console window is closed (SIGHUP on Windows)
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { saveLiquidations(); saveHeatmap(); process.exit(0); });
 
-// ---------------------------------------------------------------- HTTP static + API
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg' };
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
-  if (url.pathname === '/api/state') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(engine.snapshot(tfOf(url)))); }
-  if (url.pathname.startsWith('/icons/')) return icons.serve(url.pathname.slice(7).replace(/[^a-z0-9_-]/gi, ''), res);
-  if (url.pathname === '/api/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: true, price: engine.index, status: engine.statusState() })); }
-  let file;
-  try { file = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400); return res.end('bad request'); }
-  if (file.includes('..')) { res.writeHead(403); return res.end('forbidden'); }
-  readStatic('public' + file, (err, data) => {
-    if (err) { res.writeHead(err.message === 'forbidden' ? 403 : 404); return res.end('not found'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
-    res.end(data);
-  });
-});
-
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 }); // clients only send tiny control messages
-wss.on('connection', (ws, req) => {
-  ws.isAlive = true;
-  ws.tf = tfOf(new URL(req.url, 'http://localhost')); // one page = one timeframe (?tf=15m)
-  ws.on('pong', () => { ws.isAlive = true; });
-  ws.on('error', () => { /* the socket is closed right after; nothing else to do */ });
-  ws.on('message', (raw) => {
-    try {
-      const m = JSON.parse(raw);
-      if (m.type === 'hello' && engine.hasTf(m.tf)) ws.tf = m.tf;
-      if (m.type === 'snapshot' || m.type === 'hello') ws.send(JSON.stringify(engine.snapshot(ws.tf)));
-    } catch (e) { /* ignore */ }
-  });
-  ws.send(JSON.stringify(engine.snapshot(ws.tf)));
-  mainLog(`client connected (${wss.clients.size}) tf=${ws.tf} from ${req.socket.remoteAddress}`);
-});
-setInterval(() => { for (const ws of wss.clients) { if (!ws.isAlive) { ws.terminate(); continue; } ws.isAlive = false; ws.ping(); } }, 30000);
-engine.on('message', (msg) => {
-  if (!wss.clients.size) return;
-  let data = null; // serialised lazily: timeframe-specific messages only go to the pages showing that timeframe
-  for (const ws of wss.clients) {
-    if (ws.readyState !== WebSocket.OPEN || ws.bufferedAmount >= 4e6) continue;
-    if (msg.tf && msg.tf !== ws.tf) continue;
-    if (data === null) data = JSON.stringify(msg);
-    ws.send(data);
-  }
-});
+// ---------------------------------------------------------------- HTTP static + API + WebSocket (server/http.js)
+const { server } = createApp({ engine, icons, readStatic, log: mainLog });
 
 // ---------------------------------------------------------------- data sources
 async function startLive() {

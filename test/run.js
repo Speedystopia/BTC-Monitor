@@ -436,11 +436,61 @@ test('static files must stay inside the root folder (drive roots included)', () 
   assert.ok(isInside(sep, sep + 'public' + sep + 'index.html')); // exe at the root of a drive / USB stick
 });
 
-group('server (integration)');
+group('server (in process)');
 const httpGet = (port, p) => new Promise((resolve, reject) => {
   const req = require('http').get({ host: '127.0.0.1', port, path: p, timeout: 5000 }, (res) => { let body = ''; res.on('data', d => { body += d; }); res.on('end', () => resolve({ status: res.statusCode, body })); });
   req.on('timeout', () => req.destroy(new Error('no response for ' + p))); req.on('error', reject);
 });
+test('slow clients skip the replaceable messages, then get disconnected', () => {
+  const { sendPolicy, DROP_AT, KILL_AT } = require('../server/http');
+  assert.strictEqual(sendPolicy({ type: 'tick' }, 0), 'send');
+  for (const type of ['tick', 'book', 'orders', 'pct', 'scanner', 'assets', 'status', 'heat']) assert.strictEqual(sendPolicy({ type }, DROP_AT), 'skip', type);
+  for (const type of ['analysis', 'liq', 'alert', 'calendar', 'snapshot']) assert.strictEqual(sendPolicy({ type }, DROP_AT), 'send', type);
+  assert.strictEqual(sendPolicy({ type: 'heat', closed: true }, DROP_AT), 'send'); // final column of a closed candle
+  assert.strictEqual(sendPolicy({ type: 'analysis' }, KILL_AT), 'close');
+});
+test('HTTP API, static files and WebSocket routing by timeframe', async () => {
+  const { createApp } = require('../server/http');
+  const { readStatic } = require('../server/paths');
+  const engine = new Engine({}); const logs = [];
+  const icons = { serve: (name, res) => { res.writeHead(404); res.end(); } };
+  const app = createApp({ engine, icons, readStatic, log: (m) => logs.push(m) });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const port = app.server.address().port;
+  const WS = require('ws');
+  try {
+    assert.strictEqual(JSON.parse((await httpGet(port, '/api/state?tf=1h')).body).meta.tf, '1h');
+    assert.strictEqual(JSON.parse((await httpGet(port, '/api/health')).body).ok, true);
+    assert.strictEqual((await httpGet(port, '/%E0%A4%A')).status, 400);
+    assert.strictEqual((await httpGet(port, '/nope.js')).status, 404);
+    const home = await httpGet(port, '/'); assert.strictEqual(home.status, 200); assert.ok(/<html/i.test(home.body));
+    // one client per timeframe; each receives its timeframe's messages and the shared ones
+    const open = (tf) => new Promise((resolve, reject) => {
+      const ws = new WS(`ws://127.0.0.1:${port}/ws?tf=${tf}`); ws.got = [];
+      ws.on('message', (d) => { const m = JSON.parse(d); ws.got.push(m); if (m.type === 'snapshot') resolve(ws); });
+      ws.on('error', reject);
+    });
+    const a = await open('1h'), b = await open('5m');
+    assert.strictEqual(a.got[0].meta.tf, '1h'); assert.strictEqual(b.got[0].meta.tf, '5m');
+    engine.emit('message', { type: 'tick', tf: '5m', t: 1 }); engine.emit('message', { type: 'status', status: {} });
+    await waitFor(() => b.got.length === 3 && a.got.length === 2, 2000);
+    assert.deepStrictEqual(a.got.map(m => m.type), ['snapshot', 'status']);
+    // a slow client: replaceable messages skipped, analysis still sent, then disconnected
+    const [sa] = Array.from(app.wss.clients).filter(c => c.tf === '1h');
+    Object.defineProperty(sa, 'bufferedAmount', { configurable: true, get: () => 300 * 1024 });
+    engine.emit('message', { type: 'tick', tf: '1h' }); engine.emit('message', { type: 'analysis', tf: '1h' });
+    await waitFor(() => a.got.length === 3, 2000);
+    assert.strictEqual(a.got[2].type, 'analysis'); assert.strictEqual(sa.skipped, 1);
+    const closed = new Promise(r => a.on('close', r));
+    Object.defineProperty(sa, 'bufferedAmount', { configurable: true, get: () => 40 * 1048576 });
+    engine.emit('message', { type: 'alert', tf: '1h' });
+    await closed;
+    assert.ok(logs.some(l => /too slow/.test(l)));
+    b.close();
+  } finally { app.close(); }
+});
+
+group('server (integration)');
 /** A configuration with no data source (no exchange, feed, download or store in the project): the server runs offline. */
 function offlineConfig() {
   const os = require('os'), fs = require('fs'), path = require('path');
