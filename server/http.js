@@ -75,8 +75,11 @@ function createApp({ engine, icons, readStatic, log }) {
     }
   });
 
+  // candle history loaded after pages connected: they get it with a new snapshot
+  const stopHistory = engine.on('history', () => { for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(engine.snapshot(ws.tf))); });
+
   function close() {
-    clearInterval(heartbeat); stopBroadcast();
+    clearInterval(heartbeat); stopBroadcast(); stopHistory();
     for (const ws of wss.clients) ws.terminate();
     wss.close(); server.close();
   }

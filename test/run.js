@@ -486,6 +486,11 @@ test('HTTP API, static files and WebSocket routing by timeframe', async () => {
     engine.emit('message', { type: 'alert', tf: '1h' });
     await closed;
     assert.ok(logs.some(l => /too slow/.test(l)));
+    // a new snapshot once the candle history is loaded (pages opened at startup, before it)
+    b.got.length = 0;
+    engine.seedHistory({ '5m': [{ t: 1789400100000, o: 1, h: 2, l: 1, c: 2, v: 1 }, { t: 1789400400000, o: 2, h: 3, l: 2, c: 3, v: 1 }] });
+    await waitFor(() => b.got.some(m => m.type === 'snapshot'), 2000);
+    assert.strictEqual(b.got.find(m => m.type === 'snapshot').analysis.candles.length, 2);
     b.close();
   } finally { app.close(); }
 });

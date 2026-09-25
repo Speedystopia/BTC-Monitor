@@ -153,6 +153,7 @@ module.exports = (function (I, C, A, H) {
       this.historyLoaded = true;
       this._lastAnalysisAt = 0; this._lastScanAt = 0;
       this.recompute(this.now(), true);
+      this.emit('history'); // pages opened before the history was loaded need a new snapshot
     }
 
     // ------------------------------------------------------------------ trades
