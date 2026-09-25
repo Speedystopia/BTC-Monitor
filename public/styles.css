@@ -71,6 +71,10 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 
 .chartcol { display: grid; grid-template-rows: minmax(0,1fr) 190px; min-height: 0; min-width: 0; position: relative; }
 .chartwrap { position: relative; min-height: 0; min-width: 0; overflow: hidden; }
+/* chart navigation: drag = scroll back in time, mouse = crosshair (touch: no page scroll over the charts) */
+.chartwrap, .oscwrap { cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
+.chartwrap.dragging, .oscwrap.dragging { cursor: grabbing; }
+.livebtn { position: absolute; z-index: 6; right: 128px; bottom: 30px; font-family: var(--font-cond); font-size: 13px; font-weight: 700; letter-spacing: 1px; color: #fff; background: #2563eb; border: 0; border-radius: 3px; padding: 4px 10px; cursor: pointer; }
 .chartwrap canvas, .oscwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .oscwrap { position: relative; border-top: 1px solid var(--line); min-height: 0; }
 

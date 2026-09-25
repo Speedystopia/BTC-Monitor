@@ -149,7 +149,10 @@ connectés (source de données active).
 
 Raccourcis : **M** = couper / réactiver le son, **H** = afficher / masquer la heatmap, **[** / **]** = intensité de la
 heatmap, **S** = afficher / masquer les sessions (aussi via les boutons *HEATMAP* et *SESSIONS* en bas, choix mémorisés
-par le navigateur), molette sur le graphique = zoom. Dans l'adresse, `?heatmap=0` / `?sessions=0` (ou `=1`) et
+par le navigateur). Souris : molette = zoom, **glisser** = remonter dans le temps (la vue reste sur ces bougies pendant
+que de nouvelles arrivent), **double-clic** ou bouton *LIVE ▸* = revenir aux dernières bougies ; le **réticule** suit la
+souris avec le prix et l'heure sur les axes et les valeurs de la bougie survolée (ouverture, plus haut, plus bas,
+clôture, variation, volume, EMA, RSI ; Momentum Wave dans le titre du panneau du bas). Dans l'adresse, `?heatmap=0` / `?sessions=0` (ou `=1`) et
 `?heatgain=1.5` imposent le choix quel que soit celui mémorisé (utile pour une source OBS :
 `http://localhost:8787/?tf=15m&heatmap=1&sessions=0&heatgain=1.5`).
 

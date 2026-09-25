@@ -52,7 +52,7 @@ window.BTCM_APP = (function () {
         state.scanner = msg.scanner || []; state.pct = msg.pct || []; state.book = msg.book; chart.book = msg.book; state.orders = msg.orders || [];
         state.liq = msg.liq || state.liq; state.assets = msg.assets || []; state.calendar = msg.calendar; state.status = msg.status;
         if (msg.price) state.tick = Object.assign({}, state.tick || {}, { p: msg.price });
-        chart.visible = osc.visible = Math.min(msg.meta.visibleCandles || 300, Math.max(40, state.candles.length)); chart.tfMs = msg.meta.tfMs;
+        chart.visible = osc.visible = Math.min(msg.meta.visibleCandles || 300, Math.max(40, state.candles.length)); chart.tfMs = osc.tfMs = msg.meta.tfMs; setAnchor(null);
         chart.refLabel = REF_LABELS[msg.meta.refExchange] || (msg.meta.refExchange || '').slice(0, 3).toUpperCase();
         chart.sessions = msg.meta.sessions || null;
         // heatmap: columns of the visible candles; older ones are asked for when needed (requestHeat)
@@ -81,7 +81,7 @@ window.BTCM_APP = (function () {
   function applyAnalysis(a) {
     if (!a) return;
     state.candles = a.candles || []; state.zones = a.zones; state.markers = a.markers || []; state.pending = a.pending; state.condition = a.condition; state.tfMs = a.tfMs || state.tfMs;
-    chart.setSeries(state.candles, state.zones, state.markers, state.pending, state.condition); chart.tfMs = state.tfMs; osc.candles = state.candles;
+    chart.setSeries(state.candles, state.zones, state.markers, state.pending, state.condition); chart.tfMs = osc.tfMs = state.tfMs; osc.candles = state.candles;
     dirty = true;
   }
   /** Heatmap columns from the server: { t, b0, s, d (base64 bytes) }. */
@@ -278,9 +278,38 @@ window.BTCM_APP = (function () {
     open();
   }
 
+  // ------------------------------------------------------------------ chart navigation
+  // Drag = scroll back / forward in time (the view then stays on those candles as new ones arrive), double-click or
+  // LIVE = back to the latest candles, wheel = zoom (keeps the right edge), mouse = crosshair with the candle's values.
+  function setAnchor(t) { chart.anchorT = osc.anchorT = t; $('liveBtn').classList.toggle('hidden', t == null); dirty = true; }
+  function initNavigation() {
+    const wraps = [[$('chartwrap'), chart.canvas], [document.querySelector('.oscwrap'), osc.canvas]];
+    let drag = null;
+    for (const [wrap, canvas] of wraps) {
+      wrap.addEventListener('pointerdown', (e) => {
+        const L = chart.layout; if (e.button !== 0 || !L || e.target.tagName === 'BUTTON') return;
+        drag = { x: e.clientX, end: L.end, slot: L.slot, wrap };
+        wrap.setPointerCapture(e.pointerId); wrap.classList.add('dragging');
+      });
+      wrap.addEventListener('pointermove', (e) => {
+        const r = canvas.getBoundingClientRect(), x = e.clientX - r.left;
+        chart.hover = { x, y: canvas === chart.canvas ? e.clientY - r.top : null }; dirty = true;
+        if (!drag) return;
+        const c = state.candles, n = Math.min(chart.visible, c.length), d = Math.round((e.clientX - drag.x) / drag.slot);
+        const end = Math.max(n, Math.min(c.length, drag.end - d));
+        if (end >= c.length) { if (chart.anchorT != null) setAnchor(null); } else if (c[end - 1].t !== chart.anchorT) setAnchor(c[end - 1].t);
+      });
+      const stop = () => { if (drag) { drag.wrap.classList.remove('dragging'); drag = null; } };
+      wrap.addEventListener('pointerup', stop); wrap.addEventListener('pointercancel', stop);
+      wrap.addEventListener('pointerleave', () => { if (!drag) { chart.hover = null; dirty = true; } });
+      wrap.addEventListener('dblclick', () => setAnchor(null));
+    }
+    $('liveBtn').addEventListener('click', () => setAnchor(null));
+  }
+
   // ------------------------------------------------------------------ render loop
   function loop() {
-    if (dirty) { dirty = false; try { chart.render(); osc.render(); requestHeat(); } catch (e) { console.error(e); } }
+    if (dirty) { dirty = false; try { chart.render(); osc.hoverT = chart.hoverT; osc.render(); requestHeat(); } catch (e) { console.error(e); } }
     requestAnimationFrame(loop);
   }
   function start() {
@@ -291,6 +320,7 @@ window.BTCM_APP = (function () {
     // the canvases draw with Barlow Condensed: load its weights explicitly, then redraw
     if (document.fonts && document.fonts.load) Promise.all([500, 600, 700].map(w => document.fonts.load(`${w} 12px "Barlow Condensed"`))).then(() => { dirty = true; }, () => {});
     renderLogo();
+    initNavigation();
     // zoom with the mouse wheel
     $('chartwrap').addEventListener('wheel', (e) => { e.preventDefault(); const v = Math.round(chart.visible * (e.deltaY > 0 ? 1.15 : 0.87)); chart.visible = osc.visible = Math.max(40, Math.min(state.candles.length || 900, v)); dirty = true; }, { passive: false });
     // audio (default: config.js alerts.audio, applied with the first snapshot)
