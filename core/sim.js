@@ -14,10 +14,11 @@
 
   // deterministic PRNG (mulberry32) so demo runs are reproducible
   function rng(seed) { let a = seed >>> 0; return function () { a += 0x6D2B79F5; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  const BOOK_SPAN = 400; // simulated books hold levels within +/- this many dollars of the price
   function gauss(r) { let u = 0, v = 0; while (u === 0) u = r(); while (v === 0) v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
 
-  /** Generate a 1-minute price path ending near `endPrice` at `endTime`. */
-  function generateMinutes(minutes, endPrice, endTime, seed) {
+  /** Stream a 1-minute price path ending near `endPrice` at `endTime`: onCandle(t, o, h, l, c, v, bv), oldest first. */
+  function streamMinutes(minutes, endPrice, endTime, seed, onCandle) {
     const r = rng(seed || 42);
     const path = new Float64Array(minutes);
     let p = 1, vol = 0.0006, drift = 0;
@@ -29,14 +30,32 @@
     }
     const scale = endPrice / path[minutes - 1];
     const startT = C.bucket(endTime, C.MIN) - (minutes - 1) * C.MIN;
-    const candles = [];
     for (let i = 0; i < minutes; i++) {
       const c = path[i] * scale, o = i ? path[i - 1] * scale : c;
       const wick = Math.abs(c - o) * 0.6 + c * 0.00025 * r();
       const v = 4 + r() * 12 + (i > minutes - 200 ? 6 : 0);
-      candles.push({ t: startT + i * C.MIN, o, h: Math.max(o, c) + wick * r(), l: Math.min(o, c) - wick * r(), c, v, bv: v * (0.4 + 0.2 * r()) });
+      const h = Math.max(o, c) + wick * r(), l = Math.min(o, c) - wick * r();
+      onCandle(startT + i * C.MIN, o, h, l, c, v, v * (0.4 + 0.2 * r()));
     }
+  }
+  /** Same path as an array of candles. */
+  function generateMinutes(minutes, endPrice, endTime, seed) {
+    const candles = [];
+    streamMinutes(minutes, endPrice, endTime, seed, (t, o, h, l, c, v, bv) => candles.push({ t, o, h, l, c, v, bv }));
     return candles;
+  }
+  /** Aggregates streamed candles into one timeframe, keeping only the last `keep` (same result as C.aggregate(...).slice(-keep)). */
+  function tailAggregator(tfMs, keep) {
+    const out = []; let cur = null;
+    const flush = () => { if (!cur) return; out.push(cur); if (out.length > 2 * keep) out.splice(0, out.length - keep); };
+    return {
+      add(t, o, h, l, c, v, bv) {
+        const b = C.bucket(t, tfMs);
+        if (!cur || cur.t !== b) { flush(); cur = { t: b, o, h, l, c, v, bv }; return; }
+        cur.h = Math.max(cur.h, h); cur.l = Math.min(cur.l, l); cur.c = c; cur.v += v; cur.bv += bv;
+      },
+      result() { flush(); cur = null; return out.slice(-keep); },
+    };
   }
 
   class Simulator {
@@ -47,11 +66,16 @@
     }
     seed() {
       const now = this.engine.now();
-      const m1 = generateMinutes(400 * 1440, this.o.price, now, this.o.seed);
-      const hist = { '1m': m1.slice(-1000) };
-      for (const tf of ['3m', '5m', '15m', '1h', '4h']) hist[tf] = C.aggregate(m1, C.TIMEFRAMES[tf]).slice(-1000);
-      hist['1d'] = C.aggregate(m1, C.TIMEFRAMES['1d']).slice(-400);
-      this.price = m1[m1.length - 1].c;
+      // 400 days of minutes are streamed into the base timeframes (never held as 576k candle objects)
+      const keep = { '1m': 1000, '3m': 1000, '5m': 1000, '15m': 1000, '1h': 1000, '4h': 1000, '1d': 400 };
+      const tfs = Object.keys(keep), aggs = tfs.map(tf => tailAggregator(C.TIMEFRAMES[tf], keep[tf]));
+      let last = this.o.price;
+      streamMinutes(400 * 1440, this.o.price, now, this.o.seed, (t, o, h, l, c, v, bv) => {
+        for (let k = 0; k < aggs.length; k++) aggs[k].add(t, o, h, l, c, v, bv);
+        last = c;
+      });
+      const hist = {}; tfs.forEach((tf, k) => { hist[tf] = aggs[k].result(); });
+      this.price = last;
       this.engine.seedHistory(hist);
     }
     start() {
@@ -99,15 +123,15 @@
     }
     initBook(id) {
       const r = this.r; const bids = [], asks = []; const p = this.price;
-      for (let i = 1; i <= 400; i++) { bids.push([Math.round((p - i) * 10) / 10, 0.05 + r() * 1.2]); asks.push([Math.round((p + i) * 10) / 10, 0.05 + r() * 1.2]); }
+      for (let i = 1; i <= BOOK_SPAN; i++) { bids.push([Math.round((p - i) * 10) / 10, 0.05 + r() * 1.2]); asks.push([Math.round((p + i) * 10) / 10, 0.05 + r() * 1.2]); }
       this.books[id] = { bids: new Map(bids), asks: new Map(asks), walls: [] };
       this.engine.onBookSnapshot(id, bids, asks);
     }
     updateBook(id) {
       const r = this.r, b = this.books[id], p = this.price; const dB = [], dA = [];
-      // keep the book centered: drop crossed levels, add new far levels
-      for (const [px] of b.bids) if (px >= p) { b.bids.delete(px); dB.push([px, 0]); }
-      for (const [px] of b.asks) if (px <= p) { b.asks.delete(px); dA.push([px, 0]); }
+      // keep the book centered: drop crossed levels and levels the price drifted away from, add new ones
+      for (const [px] of b.bids) if (px >= p || px < p - BOOK_SPAN) { b.bids.delete(px); dB.push([px, 0]); }
+      for (const [px] of b.asks) if (px <= p || px > p + BOOK_SPAN) { b.asks.delete(px); dA.push([px, 0]); }
       for (let i = 0; i < 12; i++) {
         const bp = Math.round((p - 1 - r() * 300) * 10) / 10, ap = Math.round((p + 1 + r() * 300) * 10) / 10;
         const bq = 0.05 + r() * 1.2, aq = 0.05 + r() * 1.2;
@@ -128,5 +152,5 @@
     stop() { this.timers.forEach(clearInterval); this.timers = []; }
   }
 
-  return { Simulator, generateMinutes, rng };
+  return { Simulator, generateMinutes, streamMinutes, tailAggregator, rng };
 });

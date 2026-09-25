@@ -5,7 +5,7 @@ const I = require('../core/indicators');
 const C = require('../core/candles');
 const A = require('../core/analysis');
 const { Engine } = require('../core/engine');
-const { Simulator } = require('../core/sim');
+const { Simulator, generateMinutes, streamMinutes, tailAggregator } = require('../core/sim');
 const feeds = require('../server/feeds');
 const { normalize, flagEmoji } = require('../server/calendar');
 
@@ -219,6 +219,24 @@ test('baseFor picks the deepest aligned base timeframe', () => {
   assert.strictEqual(C.baseFor('8h', avail), '4h'); assert.strictEqual(C.baseFor('12h', avail), '4h'); assert.strictEqual(C.baseFor('6h', avail), '1h');
   assert.strictEqual(C.baseFor('30m', avail), '15m'); assert.strictEqual(C.baseFor('3m', avail), '1m'); assert.strictEqual(C.baseFor('1d', avail), '1d');
   assert.strictEqual(C.baseFor('4h', { '1h': [1] }), '1h'); assert.strictEqual(C.baseFor('1m', { '5m': [1] }), null);
+});
+test('streamed simulator history equals aggregating the full minute path', () => {
+  const end = 1789400123456, minutes = 3 * 1440;
+  const m1 = generateMinutes(minutes, 78600, end, 11);
+  for (const [tf, keep] of [['1m', 500], ['5m', 300], ['1h', 50], ['1d', 2]]) {
+    const agg = tailAggregator(C.TIMEFRAMES[tf], keep);
+    streamMinutes(minutes, 78600, end, 11, agg.add);
+    assert.deepStrictEqual(agg.result(), C.aggregate(m1, C.TIMEFRAMES[tf]).slice(-keep), tf);
+  }
+});
+test('simulated order books stay bounded while the price drifts', () => {
+  const engine = new Engine({}); engine.now = () => 1789400000000;
+  const sim = new Simulator(engine, { price: 78600, exchanges: ['binance'] });
+  sim.initBook('binance');
+  for (let i = 0; i < 1500; i++) { sim.price += 2; sim.updateBook('binance'); } // $3000 move
+  const b = sim.books.binance;
+  assert.ok(b.bids.size + b.asks.size <= 8100, `book grew to ${b.bids.size + b.asks.size} levels`);
+  assert.strictEqual(engine.books.binance.size(), b.bids.size + b.asks.size);
 });
 test('simulator seeds all timeframes and runs the analysis', () => {
   const engine = new Engine({ chartTimeframe: '5m' });
