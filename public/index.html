@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bitcoin Live Educational Pro Chart</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <!-- ============================================================ header -->
+  <header class="topbar">
+    <div class="title">Bitcoin Live Educational <span class="pro">Pro</span> Chart <span class="mode hidden" id="modeBadge">SIMULATION</span></div>
+    <div class="assets" id="assets"></div>
+  </header>
+
+  <!-- ============================================================ main -->
+  <div class="main">
+    <aside class="feed">
+      <div class="feed-head"><span><b>Order book</b> · large orders</span><span id="feedStats">—</span></div>
+      <div class="rows" id="feedRows"></div>
+    </aside>
+
+    <section class="chartcol">
+      <div class="chartwrap" id="chartwrap">
+        <canvas id="chart"></canvas>
+        <div class="ov symline"><span class="btc">₿</span><span id="symName">Bitcoin / U.S. Dollar</span><span class="sep">·</span><span id="symTf">5</span><span class="sep">·</span><span id="symSrc">Composite</span><span class="vol">Vol<b id="symVol">—</b></span></div>
+        <div class="ov eventline" id="eventline">Next Economic Event <span class="flag">🌐</span><span class="ev-title">loading…</span> : <span class="cd">--:--:--:--</span></div>
+        <div class="ov lastchange" id="lastchange">LAST CHANGE: <span class="st">—</span> | <span class="ago">—</span></div>
+        <div class="ov rsibox" id="rsibox">RSI: <span class="v">—</span></div>
+        <div class="ov scanner" id="scanner"><div class="sh"><span>Trend</span><span style="text-align:right">TF</span></div><div id="scannerRows"></div></div>
+        <div class="ov pct" id="pct"></div>
+        <div class="ov simbadge hidden" id="simbadge">SIMULATED DATA</div>
+        <div class="ov nodata hidden" id="nodata">WAITING FOR MARKET DATA<small id="nodataSub">connecting to exchanges…</small></div>
+        <div class="toast" id="toast"></div>
+        <button class="audiobtn hidden" id="audioBtn">🔊 ENABLE AUDIO ALERTS</button>
+      </div>
+      <div class="oscwrap"><canvas id="osc"></canvas></div>
+    </section>
+  </div>
+
+  <!-- ============================================================ footer -->
+  <footer class="bottombar">
+    <div class="logo" id="logo">₿</div>
+    <div class="pricebox">
+      <div><span class="big num" id="price">—</span><span class="cur">USD</span><span class="chg num" id="change">—</span></div>
+      <div class="traded"><b id="traded">—</b> traded in past minute</div>
+      <div class="gauge"><div class="buy" id="gaugeBuy" style="width:50%"></div><div class="sell" id="gaugeSell" style="width:50%"></div></div>
+    </div>
+    <div class="nfa">Not Financial Advice</div>
+    <div class="footright">
+      <div class="liqrow">
+      <div class="liqbar">
+        <span class="clock">🕒</span><span class="k">24H TOTAL LIQUIDATIONS</span><span class="v num" id="liqTotal">—</span>
+        <span class="lg long">▲</span><span class="k">LONG</span><span class="v num" id="liqLong">—</span>
+        <span class="lg short">▼</span><span class="k">SHORT</span><span class="v num" id="liqShort">—</span>
+        <span class="last" id="liqLast"></span>
+      </div>
+      <span class="tfswitch" id="tfSwitch" title="Timeframe pages"></span>
+      </div>
+      <div class="statusline">
+        <span class="alerts" id="alertsBtn" title="Toggle audio alerts">ALERTS ACTIVE</span>
+        <span class="src" id="sources"></span>
+        <span class="tf"><b id="tfShort">M5</b> <span id="tfLong">5 MINUTE TIME FRAME</span></span>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script src="util.js"></script>
+<script src="chart.js"></script>
+<script src="audio.js"></script>
+<script src="app.js"></script>
+<script>BTCM_APP.start({ transport: 'ws' });</script>
+</body>
+</html>
