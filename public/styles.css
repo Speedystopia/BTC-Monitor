@@ -140,6 +140,7 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 .statusline .src span { display: inline-flex; align-items: center; gap: 4px; }
 .statusline .srcic { width: 14px; height: 14px; border-radius: 50%; object-fit: cover; }
 .statusline .src .nm { font-weight: inherit; }
+.statusline .src .clk { color: var(--yellow); font-weight: 700; }
 .liqrow { display: flex; align-items: center; gap: 10px; }
 .tfswitch { display: flex; gap: 2px; font-family: var(--font-cond); }
 .tfswitch a { color: #bbb; text-decoration: none; padding: 2px 6px; border-radius: 3px; border: 1px solid #2a2a2a; font-weight: 700; font-size: 12px; letter-spacing: .5px; line-height: 1; }

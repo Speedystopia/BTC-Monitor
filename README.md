@@ -101,6 +101,7 @@ Tout se règle dans `config.js` (redémarrer le serveur après modification).
 | `visibleCandles` | nombre de bougies affichées (molette de la souris pour zoomer) |
 | `exchanges` | exchanges fusionnés dans le chandelier composite (`enabled: true/false`, symbole) |
 | `referenceExchange` | exchange dont le dernier prix est affiché comme étiquette secondaire (`CB` = Coinbase) |
+| `syncClock` | aligne les bougies et comptes à rebours sur l'heure des exchanges plutôt que sur l'horloge de l'ordinateur (défaut `true`) |
 | `liquidations` | flux de liquidations futures agrégés (Binance USDT-M + COIN-M, Bybit, OKX) |
 | `orderBook` | seuils du moniteur de carnet : `largeOrderUsd` (taille mini d'un ordre listé), `minRestMs` (temps de repos mini), `feedRangePct`, `largeTradeUsd`, `bucketUsd` (profil de liquidité) |
 | `indicators` | longueurs EMA / RSI, seuils de surachat-survente, EMA du scanner, fenêtre des zones, seuils du Momentum Wave, confirmation de la condition de marché |
@@ -168,6 +169,7 @@ btc-monitor/
 │   ├── calendar.js           calendrier économique
 │   ├── assets.js             cotations Yahoo Finance (or, indices, DXY)
 │   ├── icons.js              logos (GitHub) mis en cache dans data/icons
+│   ├── clock.js              écart entre l'horloge de l'ordinateur et celle des exchanges
 │   └── feeds/                un adaptateur par exchange (trades, carnet, liquidations, historique)
 │       ├── index.js    registre des adaptateurs (ajouter un exchange ici)
 │       ├── binance.js  coinbase.js  kraken.js  bybit.js  okx.js  bitstamp.js
@@ -211,6 +213,11 @@ Flux : exchanges → adaptateurs (événements normalisés) → `Engine` → mes
   `icons.sources` pour le remplacer.
 * **Pas de son** : les navigateurs exigent un clic sur la page avant de jouer un son —
   cliquer sur *ENABLE AUDIO ALERTS* (dans OBS, cocher *Contrôler l'audio via OBS*).
+* **Horloge de l'ordinateur décalée** : au démarrage puis toutes les 10 minutes, le serveur demande
+  l'heure à Binance, Coinbase, Bybit et OKX (comme NTP : on garde l'aller-retour le plus rapide de
+  chacun, puis la médiane). Les bougies, les comptes à rebours et les âges utilisent cette heure ; la
+  console indique l'écart et la barre d'état affiche `CLOCK +3.2S` dès qu'il atteint une seconde.
+  Désactivable avec `syncClock: false`.
 * **Réseau avec proxy** : renseigner `proxy` dans `config.js` (la variable d'environnement `HTTPS_PROXY`
   est reprise par défaut). Les modules nécessaires sont installés avec les dépendances (version Node.js ;
   l'exécutable Windows ne gère pas le proxy). Proxy qui inspecte le TLS : indiquer son certificat racine

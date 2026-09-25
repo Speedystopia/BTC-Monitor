@@ -58,6 +58,9 @@ function start(ctx) {
   return { stop: () => conn.close() };
 }
 
+/** Exchange clock (ms). */
+async function serverTime() { return Math.round(+(await getJson(`${REST}/time`)).epoch * 1000); }
+
 /** Historical candles (paged, 300 per request). Oldest first. */
 async function history(symbol, tf, limit) {
   const g = GRAN[tf]; if (!g) return [];
@@ -76,4 +79,4 @@ async function history(symbol, tf, limit) {
   return Array.from(out.values()).sort((a, b) => a.t - b.t);
 }
 
-module.exports = { start, history, parse, tickers: true }; // tickers: can stream config.assets
+module.exports = { start, history, serverTime, parse, tickers: true }; // tickers: can stream config.assets

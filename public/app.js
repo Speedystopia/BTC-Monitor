@@ -32,9 +32,19 @@ window.BTCM_APP = (function () {
   function iconSrc(key) { return state.icons[key] || fallbackIcon(key); }
   function iconImg(key, cls, title) { const fb = fallbackIcon(key); return `<img class="${cls || 'exic'}" src="${iconSrc(key)}" alt="${U.escapeHtml(key)}" title="${U.escapeHtml(title || key)}" onerror="this.onerror=null;this.src='${fb}'">`; }
 
+  // ------------------------------------------------------------------ server time
+  // Ages and countdowns use the server clock (aligned on the exchanges): this browser may run on another
+  // computer, or its clock may be off. Ticks carry the server time; of the recent (server time - arrival)
+  // differences, the largest is the one least delayed by the network.
+  const skews = [];
+  let skew = 0;
+  function serverTimeAt(t) { if (!(t > 0)) return; skews.push(t - Date.now()); if (skews.length > 40) skews.shift(); skew = Math.max.apply(null, skews); }
+  const now = () => Date.now() + skew;
+
   // ------------------------------------------------------------------ messages
   function handle(msg) {
     state.lastMsgAt = Date.now();
+    if (msg.type === 'tick' || msg.type === 'snapshot') serverTimeAt(msg.t);
     switch (msg.type) {
       case 'snapshot': {
         state.meta = msg.meta; state.tf = msg.meta.tf; state.tfMs = msg.meta.tfMs; state.icons = msg.meta.icons || {};
@@ -110,7 +120,7 @@ window.BTCM_APP = (function () {
     $('symName').textContent = m.symbol; $('symTf').textContent = U.tfShort(state.tf);
     const [s, l] = U.tfName(state.tf); $('tfShort').textContent = s; $('tfLong').textContent = l;
     const c = state.condition; const lc = $('lastchange');
-    if (c) { lc.querySelector('.st').textContent = c.state; lc.querySelector('.st').className = 'st ' + c.state; lc.querySelector('.ago').textContent = U.fmtMinAgo(Date.now() - (c.since + state.tfMs)); }
+    if (c) { lc.querySelector('.st').textContent = c.state; lc.querySelector('.st').className = 'st ' + c.state; lc.querySelector('.ago').textContent = U.fmtMinAgo(now() - (c.since + state.tfMs)); }
     const srcs = state.status ? state.status.exchanges.filter(e => e.status === 'ok').length : 0;
     $('symSrc').textContent = `Composite · ${srcs} exchange${srcs === 1 ? '' : 's'}`;
   }
@@ -126,7 +136,7 @@ window.BTCM_APP = (function () {
     $('pct').innerHTML = (state.pct || []).map(p => `<div class="pr"><span class="pl">${p.label}</span><span class="pv ${p.value == null ? 'flat' : p.value >= 0 ? 'up' : 'down'}">${U.fmtPct(p.value)}</span></div>`).join('');
   }
   function renderOrders() {
-    const rows = state.orders || []; const now = Date.now();
+    const rows = state.orders || []; const t = now();
     const max = rows.reduce((m, r) => Math.max(m, r.usd), 1);
     const names = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', bybit: 'Bybit', okx: 'OKX', bitstamp: 'Bitstamp' };
     const html = rows.map(r => {
@@ -135,7 +145,7 @@ window.BTCM_APP = (function () {
       const cls = `row ${side} ${r.kind} ${r.removed ? 'removed' : ''} ${r.usd >= max * 0.6 ? 'big' : ''}`;
       const what = r.kind === 'trade' ? 'market trade' : r.removed ? 'order pulled / filled' : 'resting order';
       const mark = r.kind === 'trade' ? '<span class="mk trade">⚡</span>' : r.removed ? '<span class="mk removed">✕</span>' : '';
-      return `<div class="${cls}" style="--a:${a.toFixed(2)}" data-ts="${r.ts}">${iconImg(r.ex, 'exic', `${names[r.ex] || r.ex} — ${what}`)}<span class="price">${mark}${U.fmtPrice(r.price, 1)}</span><span class="usd">${U.fmtUsd(r.usd)}</span><span class="age">${U.fmtAge(now - r.ts)}</span></div>`;
+      return `<div class="${cls}" style="--a:${a.toFixed(2)}" data-ts="${r.ts}">${iconImg(r.ex, 'exic', `${names[r.ex] || r.ex} — ${what}`)}<span class="price">${mark}${U.fmtPrice(r.price, 1)}</span><span class="usd">${U.fmtUsd(r.usd)}</span><span class="age">${U.fmtAge(t - r.ts)}</span></div>`;
     }).join('');
     $('feedRows').innerHTML = html;
     const active = rows.filter(r => r.kind === 'order' && !r.removed);
@@ -143,16 +153,16 @@ window.BTCM_APP = (function () {
     $('feedStats').innerHTML = `<span class="up">${U.fmtK(bids)}</span> / <span class="down">${U.fmtK(asks)}</span>`;
   }
   function refreshAges() {
-    const now = Date.now();
-    for (const el of document.querySelectorAll('#feedRows .row')) { const ts = +el.dataset.ts; el.querySelector('.age').textContent = U.fmtAge(now - ts); }
-    if (state.condition) $('lastchange').querySelector('.ago').textContent = U.fmtMinAgo(now - (state.condition.since + state.tfMs));
+    const t = now();
+    for (const el of document.querySelectorAll('#feedRows .row')) { const ts = +el.dataset.ts; el.querySelector('.age').textContent = U.fmtAge(t - ts); }
+    if (state.condition) $('lastchange').querySelector('.ago').textContent = U.fmtMinAgo(t - (state.condition.since + state.tfMs));
     renderCalendarCountdown();
   }
   function renderLiq() {
     const t = state.liq && state.liq.totals; if (!t) return;
     $('liqTotal').textContent = U.fmtK(t.total); $('liqLong').textContent = U.fmtK(t.long); $('liqShort').textContent = U.fmtK(t.short);
     const last = state.liq.recent && state.liq.recent[0];
-    $('liqLast').textContent = last ? `last: ${last.side.toUpperCase()} ${U.fmtUsd(last.usd)} @ ${U.fmtPrice(last.price, 0)} (${U.fmtAge(Date.now() - last.ts)})` : '';
+    $('liqLast').textContent = last ? `last: ${last.side.toUpperCase()} ${U.fmtUsd(last.usd)} @ ${U.fmtPrice(last.price, 0)} (${U.fmtAge(now() - last.ts)})` : '';
   }
   function renderAssets() {
     const list = state.assets || [];
@@ -167,15 +177,15 @@ window.BTCM_APP = (function () {
     const c = state.calendar; const el = $('eventline');
     const next = c && c.next;
     if (!next) { el.innerHTML = 'Next Economic Event <span class="flag">🌐</span><span class="ev-title">no upcoming events</span>'; return; }
-    el.innerHTML = `Next Economic Event <span class="flag">${next.flag || '🌐'}</span><span class="ev-title imp-${next.impact}">${U.escapeHtml(next.title)}</span> : <span class="cd">${U.fmtCountdown(next.time - Date.now())}</span>`;
+    el.innerHTML = `Next Economic Event <span class="flag">${next.flag || '🌐'}</span><span class="ev-title imp-${next.impact}">${U.escapeHtml(next.title)}</span> : <span class="cd">${U.fmtCountdown(next.time - now())}</span>`;
     el.title = (c.upcoming || []).slice(0, 8).map(e => `${e.flag || ''} ${new Date(e.time).toLocaleString()} — ${e.title} (${e.impact})`).join('\n');
   }
   function renderCalendarCountdown() {
     const c = state.calendar; if (!c || !c.next) return;
     const cd = $('eventline').querySelector('.cd'); if (!cd) return;
-    const left = c.next.time - Date.now();
+    const left = c.next.time - now();
     if (left < -60000) { // event passed: advance locally until the server refreshes
-      const up = (c.upcoming || []).filter(e => e.time > Date.now() - 60000); c.next = up[0] || null; c.upcoming = up; renderCalendar(); return;
+      const up = (c.upcoming || []).filter(e => e.time > now() - 60000); c.next = up[0] || null; c.upcoming = up; renderCalendar(); return;
     }
     cd.textContent = U.fmtCountdown(left);
   }
@@ -185,8 +195,14 @@ window.BTCM_APP = (function () {
       const cls = e.status === 'ok' && e.lastTradeAgo != null && e.lastTradeAgo < 60000 ? 'ok' : (e.status === 'ok' ? 'warn' : 'bad');
       const share = e.share ? ` ${(e.share * 100).toFixed(0)}%` : '';
       return `<span title="${e.status} ${U.escapeHtml(e.detail || '')} · last trade ${U.fmtAge(e.lastTradeAgo)} ago · book ${e.book} levels">${iconImg(e.id, 'srcic', e.name)}<i class="${cls}"></i><b class="nm">${U.escapeHtml(e.name)}</b>${share}</span>`;
-    }).join('');
+    }).join('') + clockNote(s.clockOffset);
     renderMeta();
+  }
+  /** Shown when the server computer's clock is off by a second or more (corrected with the exchange time). */
+  function clockNote(ms) {
+    if (!(Math.abs(ms) >= 1000)) return '';
+    const s = (Math.abs(ms) / 1000).toFixed(1);
+    return `<span class="clk" title="The server computer's clock is ${s} s ${ms > 0 ? 'behind' : 'ahead of'} the exchanges: candles and countdowns use the exchange time">CLOCK ${ms > 0 ? '+' : '-'}${s}S</span>`;
   }
   let toastTimer = null;
   function onAlert(a) {

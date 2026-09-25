@@ -28,6 +28,7 @@ const { Engine } = require('../core/engine');
 const { loadHistory } = require('./history');
 const { startCalendar } = require('./calendar');
 const { startAssets } = require('./assets');
+const { startClock } = require('./clock');
 const { IconStore } = require('./icons');
 const feeds = require('./feeds');
 
@@ -128,11 +129,15 @@ engine.on('message', (msg) => {
 async function startLive() {
   const enabled = Object.entries(config.exchanges || {}).filter(([id, c]) => c && c.enabled && feeds[id]);
   mainLog(`exchanges: ${enabled.map(([id]) => id).join(', ') || 'none'}`);
+  // exchange time, measured while the history loads: live candles are then built on the right boundaries
+  const clockSources = config.syncClock === false ? [] : enabled.filter(([id]) => feeds[id].serverTime).map(([id]) => [id, feeds[id].serverTime]);
+  const clock = clockSources.length ? startClock(engine, clockSources, log('clock')) : null;
   mainLog('loading candle history…');
   const hist = await loadHistory(config, log('history'));
   const count = (tf) => Object.keys(hist[tf] || {}).length;
   mainLog('history sources — ' + Object.keys(hist).map(tf => `${tf}:${count(tf)}`).join(' '));
   if (!count('5m') && !count('1m')) mainLog('WARNING: no candle history could be loaded; the chart will build from live trades only');
+  if (clock) await clock.ready;
   engine.seedHistory(hist);
   // crypto assets are streamed by their exchange adapter: say so when that exchange cannot provide them
   for (const a of config.assets || []) {

@@ -28,6 +28,10 @@ module.exports = {
     bitstamp: { enabled: true,  symbol: 'btcusd' },
   },
 
+  // Align the candles and countdowns on the exchanges' clock (Binance, Coinbase, Bybit, OKX time
+  // requests every 10 minutes) instead of trusting this computer's clock
+  syncClock: true,
+
   // Exchange whose last price is shown as the secondary price label (reference)
   referenceExchange: 'coinbase',
   // Convert USDT-quoted prices (Binance, Bybit, OKX) to USD with Kraken's USDT/USD rate

@@ -75,6 +75,9 @@ function startLiquidations(ctx) {
   return { stop: () => conn.close() };
 }
 
+/** Exchange clock (ms). */
+async function serverTime() { const res = await getJson(`${REST}/api/v5/public/time`); if (res.code !== '0') throw new Error(res.msg); return +res.data[0].ts; }
+
 /** Historical candles (max 300 per request). Oldest first. */
 async function history(symbol, tf, limit) {
   const bar = BAR[tf]; if (!bar) return [];
@@ -83,4 +86,4 @@ async function history(symbol, tf, limit) {
   return (res.data || []).map(r => ({ t: +r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5], bv: 0 })).sort((a, b) => a.t - b.t);
 }
 
-module.exports = { start, startLiquidations, history, parse };
+module.exports = { start, startLiquidations, history, serverTime, parse };

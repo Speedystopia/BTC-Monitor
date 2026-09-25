@@ -60,7 +60,9 @@ module.exports = (function (I, C, A, H) {
         enabled: sc.enabled !== false, maxTfMs: C.TIMEFRAMES[sc.maxTimeframe] || C.HOUR,
         list: (Array.isArray(sc.list) ? sc.list : []).filter(s => s && s.start && s.end && validZone(s)).map(s => ({ name: String(s.name || ''), start: String(s.start), end: String(s.end), tz: String(s.tz || 'UTC'), color: String(s.color || '#9e9e9e') })),
       };
-      this.now = () => Date.now();
+      // exchange time = computer clock + offset (server/clock.js measures it): candle boundaries and countdowns stay right on a PC clock that is off
+      this.clockOffset = 0;
+      this.now = () => Date.now() + this.clockOffset;
 
       // candle series for all timeframes
       this.series = {};
@@ -115,6 +117,13 @@ module.exports = (function (I, C, A, H) {
       this._lastStatusAt = 0; // force status emit on next tick
     }
     setUsdtRate(rate) { if (rate > 0.9 && rate < 1.1) this.usdtRate = rate; }
+    /** Exchange time minus computer time (ms); refused beyond a day (a broken answer, not a clock). */
+    setClockOffset(ms) {
+      if (!Number.isFinite(ms) || Math.abs(ms) >= C.DAY) return false;
+      ms = Math.round(ms); this.startedAt += ms - this.clockOffset; // same uptime
+      this.clockOffset = ms; this._lastStatusAt = 0;
+      return true;
+    }
     toUsd(id, price) { const e = this.ex[id]; return (this.normalizeUsdt && e && e.quote === 'USDT') ? price * this.usdtRate : price; }
 
     // ------------------------------------------------------------------ history
@@ -367,7 +376,7 @@ module.exports = (function (I, C, A, H) {
       let total = 0; const list = [];
       for (const id of Object.keys(this.ex)) { const e = this.ex[id]; const v = e.vol * Math.exp(-(now - e.volTs) / 900000); total += v; list.push({ id, name: e.name, status: e.status, detail: e.detail || '', lastTradeAgo: e.ts ? now - e.ts : null, vol5m: v, last: e.last, trades: e.trades, book: this.books[id] ? this.books[id].size() : 0 }); }
       for (const l of list) l.share = total > 0 ? l.vol5m / total : 0;
-      return { exchanges: list, indexSources: this.indexSources || 0, uptime: now - this.startedAt, usdtRate: this.usdtRate, icons: this.icons || {} };
+      return { exchanges: list, indexSources: this.indexSources || 0, uptime: now - this.startedAt, usdtRate: this.usdtRate, clockOffset: this.clockOffset, icons: this.icons || {} };
     }
 
     recompute(now, force) {
@@ -475,7 +484,7 @@ module.exports = (function (I, C, A, H) {
     snapshot(tf) {
       tf = this.hasTf(tf) ? tf : this.chartTf;
       return {
-        type: 'snapshot',
+        type: 'snapshot', t: this.now(),
         meta: { symbol: this.cfg.symbolLabel || 'Bitcoin / U.S. Dollar', tf, tfMs: C.TIMEFRAMES[tf], timeframes: this.chartTfs, visibleCandles: this.cfg.visibleCandles || 300, indicators: this.icfg, orderBook: this.obcfg, alerts: this.cfg.alerts || {}, refExchange: this.refExchange, icons: this.icons || {}, sessions: this.sessions, heatmap: { enabled: !!this.heatmap, rangePct: this.hcfg.rangePct } },
         analysis: this.analysisMessage(tf),
         scanner: this.scanner, pct: this.pct,

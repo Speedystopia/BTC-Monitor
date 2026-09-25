@@ -314,6 +314,35 @@ test('seedHistory builds and analyses every timeframe', () => {
 const freePort = () => new Promise((resolve) => { const s = require('net').createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); }); });
 const waitFor = async (cond, ms) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > ms) throw new Error('timed out'); await new Promise(r => setTimeout(r, 50)); } };
 
+group('clock');
+test('the clock offset is the median of the exchanges, fastest answer of each', async () => {
+  const { startClock } = require('../server/clock');
+  const engine = new Engine({}); const logs = [];
+  let calls = 0;
+  const slowFirst = async () => { calls++; if (calls === 1) await new Promise(r => setTimeout(r, 200)); return Date.now() + 3000; }; // first request pays a handshake
+  const src = (skew) => async () => Date.now() + skew;
+  const clock = startClock(engine, [['a', slowFirst], ['b', src(3100)], ['c', src(-50000)], ['d', async () => { throw new Error('down'); }]], (m) => logs.push(m), { tries: 3 });
+  const off = await clock.ready; clock.stop();
+  assert.ok(off >= 2900 && off <= 3200, 'offset ' + off); // median of 3000, 3100, -50000 (the dead exchange is left out)
+  assert.strictEqual(engine.clockOffset, off);
+  assert.ok(Math.abs(engine.now() - (Date.now() + off)) < 50);
+  assert.strictEqual(engine.statusState().clockOffset, off);
+  assert.strictEqual(logs.length, 1); assert.ok(/3\.\d s behind/.test(logs[0]), logs[0]);
+  assert.strictEqual(await clock.sync(), engine.clockOffset); assert.strictEqual(logs.length, 1); // same offset: no new line
+});
+test('the clock keeps the computer time when no exchange answers, and refuses absurd offsets', async () => {
+  const { startClock, measure } = require('../server/clock');
+  const engine = new Engine({}); const logs = [];
+  const clock = startClock(engine, [['a', async () => 'nope'], ['b', () => new Promise(() => {})]], (m) => logs.push(m), { tries: 1 });
+  assert.strictEqual(await clock.ready, null); clock.stop();
+  assert.strictEqual(engine.clockOffset, 0); assert.ok(/no exchange answered/.test(logs[0]));
+  assert.strictEqual(engine.setClockOffset(NaN), false); assert.strictEqual(engine.setClockOffset(2 * C.DAY), false);
+  const up = engine.statusState().uptime;
+  assert.strictEqual(engine.setClockOffset(-1500.4), true); assert.strictEqual(engine.clockOffset, -1500);
+  assert.ok(Math.abs(engine.statusState().uptime - up) < 50, 'uptime unchanged by the correction');
+  const m = await measure(async () => Date.now() - 800); assert.ok(m.offset <= -790 && m.offset >= -820 && m.rtt >= 0);
+});
+
 group('net');
 test('reconnecting websocket reports a refused handshake with its HTTP status', async () => {
   const { ReconnectingWS } = require('../server/net');

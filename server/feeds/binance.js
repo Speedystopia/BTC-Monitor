@@ -108,10 +108,13 @@ function startLiquidations(ctx) {
   return { stop: () => { usdtm.close(); coinm.close(); } };
 }
 
+/** Exchange clock (ms), used to correct a computer clock that is off. */
+async function serverTime() { return +(await rest('/api/v3/time')).serverTime; }
+
 /** Historical klines: returns [{t,o,h,l,c,v,bv}] oldest first. */
 async function history(symbol, tf, limit) {
   const rows = await rest(`/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=${Math.min(limit, 1000)}`);
   return rows.map(r => ({ t: r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5], bv: +r[9] }));
 }
 
-module.exports = { start, startLiquidations, history, parse, tickers: true }; // tickers: can stream config.assets
+module.exports = { start, startLiquidations, history, serverTime, parse, tickers: true }; // tickers: can stream config.assets
