@@ -33,7 +33,6 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 10px; border-bottom: 1px solid var(--line); background: linear-gradient(#111, #000); }
 .title { font-family: var(--font-cond); font-weight: 700; font-size: 30px; letter-spacing: 1px; color: #f2f2f2; text-transform: uppercase; white-space: nowrap; line-height: 1; }
 .title .pro { color: var(--orange); }
-.title .mode { font-size: 13px; letter-spacing: 2px; color: var(--yellow); margin-left: 12px; vertical-align: middle; border: 1px solid var(--yellow); padding: 1px 6px; border-radius: 3px; }
 .assets { display: grid; grid-template-columns: repeat(2, 300px); grid-auto-rows: 14px; gap: 0 20px; align-items: center; height: 44px; align-content: center; }
 .asset { display: grid; grid-template-columns: 18px 84px 96px 70px; align-items: center; gap: 6px; font-family: var(--font-cond); font-size: 15px; line-height: 14px; white-space: nowrap; }
 .asset .ic { width: 15px; height: 15px; border-radius: 50%; object-fit: cover; background: #222; }
@@ -82,7 +81,6 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 .lastchange .st.BULLISH { color: var(--green-bright); } .lastchange .st.BEARISH { color: var(--red-bright); }
 .rsibox { right: 132px; top: 64px; font-size: 18px; font-weight: 700; color: #fff; background: rgba(0,0,0,.45); padding: 1px 6px; transition: box-shadow .3s; }
 .rsibox.ob { color: #ff5252; box-shadow: 0 0 12px rgba(255,82,82,.9); } .rsibox.os { color: #2ee56b; box-shadow: 0 0 12px rgba(46,229,107,.9); }
-.simbadge { left: 50%; top: 10px; transform: translateX(-50%); font-size: 13px; letter-spacing: 3px; color: #000; background: var(--yellow); padding: 2px 10px; border-radius: 3px; font-weight: 700; }
 .nodata { left: 50%; top: 45%; transform: translate(-50%, -50%); font-size: 26px; letter-spacing: 3px; color: var(--muted); text-align: center; }
 .nodata small { display: block; font-size: 13px; letter-spacing: 1px; margin-top: 6px; color: #666; }
 

@@ -24,15 +24,19 @@ function embedded(key) {
   try { return Buffer.from(sea.getAsset(key)); } catch (e) { return null; }
 }
 
-/** Load config.js from the root folder; in executable mode create it from the default on first run. */
-function loadConfig() {
+/**
+ * Load config.js from the root folder; in executable mode create it from the default on first run.
+ * `explicit` (--config <file>) loads another configuration file instead.
+ */
+function loadConfig(explicit) {
+  const { createRequire } = require('module');
+  if (explicit) { const f = path.resolve(explicit); return createRequire(f)(f); } // createRequire: plain require is limited in the executable
   const file = path.join(ROOT, 'config.js');
   if (!IS_EXE) return require(file);
   if (!fs.existsSync(file)) {
     const def = embedded('config.js');
     if (def) { try { fs.writeFileSync(file, def); } catch (e) { /* read-only folder: fall through */ } }
   }
-  const { createRequire } = require('module');
   if (fs.existsSync(file)) {
     try { return createRequire(file)(file); }
     catch (e) { console.error(`config.js could not be loaded (${e.message}); using the built-in defaults`); }

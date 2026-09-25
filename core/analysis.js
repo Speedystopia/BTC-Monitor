@@ -3,14 +3,7 @@
  *  supply/demand zones, possible reversal markers, market condition tracking,
  *  multi-timeframe scanner and percentage changes.
  * ========================================================================== */
-(function (root, factory) {
-  const deps = (typeof module !== 'undefined' && module.exports)
-    ? { indicators: require('./indicators'), candles: require('./candles') }
-    : { indicators: root.BTCM.indicators, candles: root.BTCM.candles };
-  const mod = factory(deps.indicators, deps.candles);
-  if (typeof module !== 'undefined' && module.exports) module.exports = mod;
-  else { root.BTCM = root.BTCM || {}; root.BTCM.analysis = mod; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (I, C) {
+module.exports = (function (I, C) {
   'use strict';
 
   const DEFAULTS = {
@@ -150,4 +143,4 @@
   }
 
   return { DEFAULTS, analyzeChart, detectReversals, detectZones, trackCondition, scanTrends, pctChanges, tfLabel };
-});
+})(require('./indicators'), require('./candles'));

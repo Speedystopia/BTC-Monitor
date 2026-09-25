@@ -1,11 +1,7 @@
 /* ============================================================================
  *  core/candles.js — timeframes, candle series, composite (multi-exchange) merge
  * ========================================================================== */
-(function (root, factory) {
-  const mod = factory();
-  if (typeof module !== 'undefined' && module.exports) module.exports = mod;
-  else { root.BTCM = root.BTCM || {}; root.BTCM.candles = mod; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+module.exports = (function () {
   'use strict';
 
   const MIN = 60000, HOUR = 3600000, DAY = 86400000;
@@ -161,4 +157,4 @@
   }
 
   return { TIMEFRAMES, BASE_TFS, CHART_TFS, SCANNER_ORDER, MIN, HOUR, DAY, bucket, baseFor, aggregate, composite, fillGaps, CandleSeries };
-});
+})();

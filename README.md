@@ -19,8 +19,7 @@ anglais comme l'original. Fonctionne dans un navigateur ou comme *source navigat
 
 **Windows — sans rien installer** : double-cliquer sur **`BTC-Monitor.exe`** (ou sur `Lancer BTC Monitor.bat`).
 Une fenêtre de console s'ouvre (la garder ouverte pendant le direct, la fermer arrête le serveur) et le
-tableau de bord s'ouvre tout seul dans le navigateur sur http://localhost:8787. `Lancer simulation.bat`
-démarre le mode simulation (marché synthétique, sans internet).
+tableau de bord s'ouvre tout seul dans le navigateur sur http://localhost:8787.
 
 * L'exécutable contient le serveur, l'interface et une copie du réglage par défaut ; au premier lancement il
   crée `config.js` à côté de lui (à éditer pour changer les réglages) et le dossier `data/`.
@@ -29,7 +28,7 @@ démarre le mode simulation (marché synthétique, sans internet).
   cliquer sur *Informations complémentaires* → *Exécuter quand même*. (`BTC-Monitor.exe` est le node.exe
   officiel de nodejs.org dans lequel le programme est injecté, voir `tools/build-exe.js` ; `npm run build:exe`
   le reconstruit.)
-* Options en ligne de commande : `BTC-Monitor.exe --sim`, `--port 9000`, `--host 0.0.0.0`, `--no-open`.
+* Options en ligne de commande : `BTC-Monitor.exe --port 9000`, `--host 0.0.0.0`, `--config autre-config.js`, `--no-open`.
 
 **macOS / Linux** : double-cliquer sur `start.command` (macOS) ou lancer `./start.sh` — Node.js ≥ 18 requis
 (https://nodejs.org) ; les dépendances s'installent seules au premier lancement.
@@ -70,10 +69,9 @@ Autres commandes :
 | Commande | Rôle |
 |---|---|
 | `npm start` | serveur live (port 8787 par défaut) |
-| `npm run sim` | mode **simulation** : marché synthétique, aucune connexion internet nécessaire |
 | `node server/index.js --port 9000` | changer le port |
-| `npm test` | tests (indicateurs, moteur, parseurs des exchanges, simulateur, serveur HTTP / WebSocket) — lancés aussi par la CI GitHub sur Node 18 à 24 |
-| `npm run build:demo` | génère `dist/demo.html`, une page autonome (simulation embarquée) |
+| `node server/index.js --config autre-config.js` | utiliser un autre fichier de réglages que `config.js` |
+| `npm test` | tests (indicateurs, moteur, parseurs des exchanges, serveur HTTP / WebSocket) — lancés aussi par la CI GitHub sur Node 18 à 24 |
 | `npm run build:exe` | reconstruit `BTC-Monitor.exe` (Windows x64) à partir des sources |
 
 ### Utilisation dans OBS
@@ -142,8 +140,7 @@ manualEvents: [
 | **Bas de page** | Prix indice, variation 24 h, volume échangé sur la dernière minute (tous exchanges) avec jauge achat / vente, état des sources (pastilles + part de volume), timeframe. |
 
 « **Composite · 5 exchanges** » dans l'en-tête indique que le chandelier est l'indice composite de 5 exchanges
-connectés ; « **Simulated composite** » signifie que le serveur tourne en mode simulation (`npm run sim`, ou
-la page démo autonome) : les bougies, ordres et liquidations sont générés par le simulateur, pas par des exchanges.
+connectés (source de données active).
 
 Raccourcis : **M** = couper / réactiver le son, molette sur le graphique = zoom.
 
@@ -155,7 +152,6 @@ Raccourcis : **M** = couper / réactiver le son, molette sur le graphique = zoom
 btc-monitor/
 ├── BTC-Monitor.exe           lanceur Windows autonome (serveur + interface, sans Node.js)
 ├── Lancer BTC Monitor.bat    lanceur Windows (exe, ou Node.js si présent)
-├── Lancer simulation.bat     idem en mode simulation
 ├── start.command / start.sh  lanceurs macOS / Linux (Node.js requis)
 ├── config.js                 réglages
 ├── server/
@@ -168,14 +164,12 @@ btc-monitor/
 │   └── feeds/                un adaptateur par exchange (trades, carnet, liquidations, historique)
 │       ├── index.js    registre des adaptateurs (ajouter un exchange ici)
 │       ├── binance.js  coinbase.js  kraken.js  bybit.js  okx.js  bitstamp.js
-├── core/                     moteur partagé (Node + navigateur)
+├── core/                     moteur (côté serveur)
 │   ├── indicators.js         SMA, EMA, RSI, ATR, Momentum Wave, tendance, variations
 │   ├── candles.js            timeframes, séries de bougies, fusion composite
 │   ├── analysis.js           zones, retournements, condition, scanner, variations
-│   ├── engine.js             prix indice, bougies live, carnet agrégé, feed, liquidations, messages
-│   └── sim.js                générateur de marché synthétique
+│   └── engine.js             prix indice, bougies live, carnet agrégé, feed, liquidations, messages
 ├── public/                   interface (index.html, styles.css, chart.js, app.js, audio.js, util.js)
-├── tools/build-demo.js       page démo autonome
 ├── tools/build-exe.js        construction de BTC-Monitor.exe (esbuild + Node SEA + postject)
 ├── test/run.js               tests (npm test)
 └── .github/workflows/ci.yml  intégration continue (tests sur Node 18 à 24)

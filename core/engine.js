@@ -1,22 +1,15 @@
 /* ============================================================================
- *  core/engine.js — the market engine (runs in Node and in the browser demo)
+ *  core/engine.js — the market engine
  *
  *  Consumes normalized exchange events (trades, order-book snapshots/deltas,
  *  liquidations, tickers) and produces the dashboard state as messages:
  *    snapshot | tick | analysis | scanner | pct | book | orders | liq |
  *    assets | calendar | status | alert
  * ========================================================================== */
-(function (root, factory) {
-  const deps = (typeof module !== 'undefined' && module.exports)
-    ? { I: require('./indicators'), C: require('./candles'), A: require('./analysis') }
-    : { I: root.BTCM.indicators, C: root.BTCM.candles, A: root.BTCM.analysis };
-  const mod = factory(deps.I, deps.C, deps.A);
-  if (typeof module !== 'undefined' && module.exports) module.exports = mod;
-  else { root.BTCM = root.BTCM || {}; root.BTCM.engine = mod; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (I, C, A) {
+module.exports = (function (I, C, A) {
   'use strict';
 
-  const EXCHANGE_NAMES = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', bybit: 'Bybit', okx: 'OKX', bitstamp: 'Bitstamp', sim: 'Simulation' };
+  const EXCHANGE_NAMES = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', bybit: 'Bybit', okx: 'OKX', bitstamp: 'Bitstamp' };
   const USDT_QUOTED = { binance: true, bybit: true, okx: true };
 
   /** Tiny event emitter. */
@@ -45,7 +38,6 @@
       this.chartTf = this.cfg.chartTimeframe || '5m';               // default page timeframe
       this.chartTfs = (this.cfg.chartTimeframes || C.CHART_TFS).filter(tf => C.TIMEFRAMES[tf]);
       if (!this.chartTfs.includes(this.chartTf)) this.chartTfs.unshift(this.chartTf);
-      this.mode = 'live';
       this.now = () => Date.now();
 
       // candle series for all timeframes
@@ -344,7 +336,7 @@
       let total = 0; const list = [];
       for (const id of Object.keys(this.ex)) { const e = this.ex[id]; const v = e.vol * Math.exp(-(now - e.volTs) / 900000); total += v; list.push({ id, name: e.name, status: e.status, detail: e.detail || '', lastTradeAgo: e.ts ? now - e.ts : null, vol5m: v, last: e.last, trades: e.trades, book: this.books[id] ? this.books[id].size() : 0 }); }
       for (const l of list) l.share = total > 0 ? l.vol5m / total : 0;
-      return { mode: this.mode, exchanges: list, indexSources: this.indexSources || 0, uptime: now - this.startedAt, usdtRate: this.usdtRate, icons: this.icons || {} };
+      return { exchanges: list, indexSources: this.indexSources || 0, uptime: now - this.startedAt, usdtRate: this.usdtRate, icons: this.icons || {} };
     }
 
     recompute(now, force) {
@@ -435,7 +427,7 @@
       tf = this.hasTf(tf) ? tf : this.chartTf;
       return {
         type: 'snapshot',
-        meta: { symbol: this.cfg.symbolLabel || 'Bitcoin / U.S. Dollar', tf, tfMs: C.TIMEFRAMES[tf], timeframes: this.chartTfs, mode: this.mode, visibleCandles: this.cfg.visibleCandles || 300, indicators: this.icfg, orderBook: this.obcfg, alerts: this.cfg.alerts || {}, refExchange: this.refExchange, icons: this.icons || {} },
+        meta: { symbol: this.cfg.symbolLabel || 'Bitcoin / U.S. Dollar', tf, tfMs: C.TIMEFRAMES[tf], timeframes: this.chartTfs, visibleCandles: this.cfg.visibleCandles || 300, indicators: this.icfg, orderBook: this.obcfg, alerts: this.cfg.alerts || {}, refExchange: this.refExchange, icons: this.icons || {} },
         analysis: this.analysisMessage(tf),
         scanner: this.scanner, pct: this.pct,
         book: this.bookProfile(), orders: this.feed,
@@ -447,4 +439,4 @@
   }
 
   return { Engine, LocalBook, Emitter, EXCHANGE_NAMES };
-});
+})(require('./indicators'), require('./candles'), require('./analysis'));

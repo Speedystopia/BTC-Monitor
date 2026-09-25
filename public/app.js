@@ -1,5 +1,5 @@
 /* ============================================================================
- *  public/app.js — dashboard application (state, panels, transport)
+ *  public/app.js — dashboard application (state, panels, server connection)
  *  One page shows one timeframe: open /?tf=15m, /?tf=1h, /?tf=4h ...
  * ========================================================================== */
 window.BTCM_APP = (function () {
@@ -12,7 +12,7 @@ window.BTCM_APP = (function () {
     tick: null, book: null, orders: [], liq: { totals: null, recent: [] }, assets: [], calendar: null, status: null, scanner: [], pct: [],
     icons: {}, connected: false, lastMsgAt: 0,
   };
-  let chart, osc, dirty = true, localCtx = null; // localCtx: in-browser engine (demo)
+  let chart, osc, dirty = true;
   const REF_LABELS = { coinbase: 'CB', binance: 'BN', kraken: 'KR', bybit: 'BB', okx: 'OKX', bitstamp: 'BS' };
 
   // ------------------------------------------------------------------ icons
@@ -28,7 +28,7 @@ window.BTCM_APP = (function () {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="${bg}"/><text x="16" y="17" text-anchor="middle" dominant-baseline="central" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="${size}" fill="${fg}">${U.escapeHtml(txt)}</text></svg>`;
     return (fallbackCache[key] = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg));
   }
-  function iconSrc(key) { return (window.BTCM_ICONS && window.BTCM_ICONS[key]) || state.icons[key] || fallbackIcon(key); }
+  function iconSrc(key) { return state.icons[key] || fallbackIcon(key); }
   function iconImg(key, cls, title) { const fb = fallbackIcon(key); return `<img class="${cls || 'exic'}" src="${iconSrc(key)}" alt="${U.escapeHtml(key)}" title="${U.escapeHtml(title || key)}" onerror="this.onerror=null;this.src='${fb}'">`; }
 
   // ------------------------------------------------------------------ messages
@@ -44,7 +44,6 @@ window.BTCM_APP = (function () {
         chart.visible = osc.visible = Math.min(msg.meta.visibleCandles || 300, Math.max(40, state.candles.length)); chart.tfMs = msg.meta.tfMs;
         chart.refLabel = REF_LABELS[msg.meta.refExchange] || (msg.meta.refExchange || '').slice(0, 3).toUpperCase();
         renderMeta(); renderTfSwitcher(); renderScanner(); renderPct(); renderOrders(); renderLiq(); renderAssets(); renderCalendar(); renderStatus();
-        $('modeBadge').classList.toggle('hidden', msg.meta.mode !== 'sim'); $('simbadge').classList.toggle('hidden', msg.meta.mode !== 'sim');
         document.title = `BTC ${U.tfShort(state.tf)} — Bitcoin Live Educational Pro Chart`;
         break;
       }
@@ -97,12 +96,11 @@ window.BTCM_APP = (function () {
     const c = state.condition; const lc = $('lastchange');
     if (c) { lc.querySelector('.st').textContent = c.state; lc.querySelector('.st').className = 'st ' + c.state; lc.querySelector('.ago').textContent = U.fmtMinAgo(Date.now() - (c.since + state.tfMs)); }
     const srcs = state.status ? state.status.exchanges.filter(e => e.status === 'ok').length : 0;
-    $('symSrc').textContent = m.mode === 'sim' ? 'Simulated composite' : `Composite · ${srcs} exchange${srcs === 1 ? '' : 's'}`;
+    $('symSrc').textContent = `Composite · ${srcs} exchange${srcs === 1 ? '' : 's'}`;
   }
   function renderTfSwitcher() {
     const m = state.meta; const el = $('tfSwitch'); if (!m || !el) return;
     el.innerHTML = (m.timeframes || []).map(tf => `<a href="?tf=${tf}" data-tf="${tf}" class="${tf === state.tf ? 'cur' : ''}" title="Open the ${U.tfName(tf)[1].toLowerCase()} in this page (Ctrl/Cmd+click for a new tab)">${U.tfShort(tf)}</a>`).join('');
-    if (localCtx) el.querySelectorAll('a').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); switchLocalTf(a.dataset.tf); }));
   }
   function renderScanner() {
     const rows = state.scanner || [];
@@ -182,7 +180,7 @@ window.BTCM_APP = (function () {
     AU.play(a.kind);
   }
 
-  // ------------------------------------------------------------------ transports
+  // ------------------------------------------------------------------ server connection
   function pageTf() { const p = new URLSearchParams(location.search); return (p.get('tf') || '').toLowerCase(); }
   function connectWs() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -197,25 +195,6 @@ window.BTCM_APP = (function () {
       ws.onerror = () => { try { ws.close(); } catch (e) { /* ignore */ } };
     };
     open();
-    return { send: (m) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); } };
-  }
-  /** In-browser engine + simulator (used by the hosted demo). */
-  function connectLocal(opts) {
-    const B = window.BTCM; if (!B || !B.engine || !B.sim) { console.error('core modules missing'); return null; }
-    const engine = new B.engine.Engine(opts.config || {});
-    localCtx = { engine, tf: engine.hasTf(pageTf()) ? pageTf() : engine.chartTf };
-    engine.on('message', (m) => { if (m.tf && m.tf !== localCtx.tf) return; handle(m); });
-    const sim = new B.sim.Simulator(engine, { price: opts.price || 78600, assets: (opts.config && opts.config.assets || []).map(a => a.label) });
-    sim.seed(); sim.start();
-    handle(engine.snapshot(localCtx.tf));
-    setInterval(() => engine.tick(), 250);
-    return { send: () => {} };
-  }
-  /** Demo only: switch the timeframe in place (no page reload). */
-  function switchLocalTf(tf) {
-    if (!localCtx || !localCtx.engine.hasTf(tf)) return;
-    localCtx.tf = tf; handle(localCtx.engine.snapshot(tf));
-    try { history.replaceState(null, '', '?tf=' + tf); } catch (e) { /* ignore */ }
   }
 
   // ------------------------------------------------------------------ render loop
@@ -247,7 +226,7 @@ window.BTCM_APP = (function () {
     setInterval(refreshAges, 1000);
     setInterval(() => { if (state.tick && Date.now() - state.lastMsgAt > 15000) { $('nodata').classList.remove('hidden'); $('nodataSub').textContent = 'no market data received for 15 s'; } }, 5000);
     $('nodata').classList.remove('hidden');
-    if (opts.transport === 'local') connectLocal(opts); else connectWs();
+    connectWs();
     requestAnimationFrame(loop);
   }
 

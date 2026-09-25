@@ -2,8 +2,8 @@
 /* ============================================================================
  *  BTC MONITOR — server entry point
  *    node server/index.js            live multi-exchange data
- *    node server/index.js --sim      synthetic market (no internet needed)
- *    node server/index.js --port 9000
+ *    node server/index.js --port 9000 --host 0.0.0.0
+ *    node server/index.js --config other-config.js
  *    node server/index.js --open     also open the dashboard in the browser
  *  (the same file is bundled into BTC-Monitor.exe by tools/build-exe.js)
  * ========================================================================== */
@@ -17,21 +17,20 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer, WebSocket } = require('ws');
 
+const args = process.argv.slice(1).filter(a => a !== process.execPath && !/[\\/]index\.js$/.test(a));
+/** Value of `--name value` or `--name=value`. */
+const argValue = (name) => { const i = args.indexOf(name); if (i >= 0) return args[i + 1]; const a = args.find(x => x.startsWith(name + '=')); return a ? a.slice(name.length + 1) : undefined; };
+
 const { IS_EXE, ROOT, loadConfig, readStatic, openBrowser } = require('./paths');
-const config = loadConfig();
+const config = loadConfig(argValue('--config'));
 const net = require('./net');
 const { Engine } = require('../core/engine');
-const { Simulator } = require('../core/sim');
 const { loadHistory } = require('./history');
 const { startCalendar } = require('./calendar');
 const { startAssets } = require('./assets');
 const { IconStore } = require('./icons');
 const feeds = require('./feeds');
 
-const args = process.argv.slice(1).filter(a => a !== process.execPath && !/[\\/]index\.js$/.test(a));
-/** Value of `--name value` or `--name=value`. */
-const argValue = (name) => { const i = args.indexOf(name); if (i >= 0) return args[i + 1]; const a = args.find(x => x.startsWith(name + '=')); return a ? a.slice(name.length + 1) : undefined; };
-const SIM = args.includes('--sim') || process.env.SIM === '1';
 const OPEN = args.includes('--open') || (IS_EXE && !args.includes('--no-open'));
 
 const ts = () => new Date().toISOString().slice(11, 19);
@@ -54,7 +53,7 @@ icons.refresh().then((map) => { engine.icons = map; mainLog(`icons ready: ${Obje
 const tfOf = (url) => { const tf = (url.searchParams.get('tf') || '').toLowerCase(); return engine.hasTf(tf) ? tf : engine.chartTf; };
 
 // ---------------------------------------------------------------- liquidation persistence
-const liqFile = path.resolve(ROOT, SIM ? 'data/liquidations-sim.json' : ((config.liquidations && config.liquidations.storeFile) || 'data/liquidations.json'));
+const liqFile = path.resolve(ROOT, (config.liquidations && config.liquidations.storeFile) || 'data/liquidations.json');
 try {
   if (fs.existsSync(liqFile)) { engine.loadLiquidations(JSON.parse(fs.readFileSync(liqFile, 'utf8'))); mainLog(`loaded ${engine.liqTotals().count} liquidation events from store`); }
 } catch (e) { mainLog('could not read liquidation store: ' + e.message); }
@@ -79,12 +78,11 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/api/state') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(engine.snapshot(tfOf(url)))); }
   if (url.pathname.startsWith('/icons/')) return icons.serve(url.pathname.slice(7).replace(/[^a-z0-9_-]/gi, ''), res);
-  if (url.pathname === '/api/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: true, mode: engine.mode, price: engine.index, status: engine.statusState() })); }
+  if (url.pathname === '/api/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: true, price: engine.index, status: engine.statusState() })); }
   let file;
   try { file = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400); return res.end('bad request'); }
   if (file.includes('..')) { res.writeHead(403); return res.end('forbidden'); }
-  const rel = file.startsWith('/core/') ? file.slice(1) : 'public' + file;
-  readStatic(rel, (err, data) => {
+  readStatic('public' + file, (err, data) => {
     if (err) { res.writeHead(err.message === 'forbidden' ? 403 : 404); return res.end('not found'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(data);
@@ -122,7 +120,7 @@ engine.on('message', (msg) => {
 // ---------------------------------------------------------------- data sources
 async function startLive() {
   const enabled = Object.entries(config.exchanges || {}).filter(([id, c]) => c && c.enabled && feeds[id]);
-  mainLog(`live mode — exchanges: ${enabled.map(([id]) => id).join(', ') || 'none'}`);
+  mainLog(`exchanges: ${enabled.map(([id]) => id).join(', ') || 'none'}`);
   mainLog('loading candle history…');
   const hist = await loadHistory(config, log('history'));
   const count = (tf) => Object.keys(hist[tf] || {}).length;
@@ -153,13 +151,6 @@ async function startLive() {
   }
 }
 
-function startSim() {
-  mainLog('SIMULATION mode — synthetic market data');
-  const sim = new Simulator(engine, { price: 78600, assets: (config.assets || []).map(a => a.label) });
-  sim.seed();
-  sim.start();
-}
-
 // ---------------------------------------------------------------- run
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
@@ -174,7 +165,7 @@ server.listen(PORT, HOST, () => {
   if (!/^(127\.|::1$|localhost$)/.test(HOST)) mainLog(`listening on ${HOST}: other devices of the network can open the dashboard`);
   if (OPEN) { openBrowser(`${URL_BASE}/`); mainLog('opening the dashboard in your browser… keep this window open while streaming'); }
   setInterval(() => engine.tick(), 250);
-  if (SIM) startSim(); else startLive().catch(e => { mainLog('startup error: ' + e.stack); });
+  startLive().catch(e => { mainLog('startup error: ' + e.stack); });
 });
 process.on('uncaughtException', (e) => { console.error(`${ts()} [fatal] ${e.stack || e}`); });
 process.on('unhandledRejection', (e) => { console.error(`${ts()} [rejection] ${(e && e.stack) || e}`); });

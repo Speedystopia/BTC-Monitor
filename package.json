@@ -5,9 +5,7 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "sim": "node server/index.js --sim",
     "test": "node test/run.js",
-    "build:demo": "node tools/build-demo.js",
     "build:exe": "npx -y -p node@20.19.5 node tools/build-exe.js"
   },
   "engines": {

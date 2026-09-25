@@ -5,7 +5,6 @@ const I = require('../core/indicators');
 const C = require('../core/candles');
 const A = require('../core/analysis');
 const { Engine } = require('../core/engine');
-const { Simulator, generateMinutes, streamMinutes, tailAggregator } = require('../core/sim');
 const feeds = require('../server/feeds');
 const { normalize, flagEmoji } = require('../server/calendar');
 
@@ -220,28 +219,11 @@ test('baseFor picks the deepest aligned base timeframe', () => {
   assert.strictEqual(C.baseFor('30m', avail), '15m'); assert.strictEqual(C.baseFor('3m', avail), '1m'); assert.strictEqual(C.baseFor('1d', avail), '1d');
   assert.strictEqual(C.baseFor('4h', { '1h': [1] }), '1h'); assert.strictEqual(C.baseFor('1m', { '5m': [1] }), null);
 });
-test('streamed simulator history equals aggregating the full minute path', () => {
-  const end = 1789400123456, minutes = 3 * 1440;
-  const m1 = generateMinutes(minutes, 78600, end, 11);
-  for (const [tf, keep] of [['1m', 500], ['5m', 300], ['1h', 50], ['1d', 2]]) {
-    const agg = tailAggregator(C.TIMEFRAMES[tf], keep);
-    streamMinutes(minutes, 78600, end, 11, agg.add);
-    assert.deepStrictEqual(agg.result(), C.aggregate(m1, C.TIMEFRAMES[tf]).slice(-keep), tf);
-  }
-});
-test('simulated order books stay bounded while the price drifts', () => {
-  const engine = new Engine({}); engine.now = () => 1789400000000;
-  const sim = new Simulator(engine, { price: 78600, exchanges: ['binance'] });
-  sim.initBook('binance');
-  for (let i = 0; i < 1500; i++) { sim.price += 2; sim.updateBook('binance'); } // $3000 move
-  const b = sim.books.binance;
-  assert.ok(b.bids.size + b.asks.size <= 8100, `book grew to ${b.bids.size + b.asks.size} levels`);
-  assert.strictEqual(engine.books.binance.size(), b.bids.size + b.asks.size);
-});
-test('simulator seeds all timeframes and runs the analysis', () => {
+test('seedHistory builds and analyses every timeframe', () => {
   const engine = new Engine({ chartTimeframe: '5m' });
-  const sim = new Simulator(engine, { price: 78600 });
-  sim.seed();
+  const now = engine.now();
+  const series = (tf, n) => { const ms = C.TIMEFRAMES[tf], last = C.bucket(now, ms); return Array.from({ length: n }, (_, i) => { const c = 80000 + 3000 * Math.sin(i / 25) + i; return { t: last - (n - 1 - i) * ms, o: c - 20, h: c + 60, l: c - 70, c, v: 10, bv: 5 }; }); };
+  engine.seedHistory({ '1m': series('1m', 1000), '3m': series('3m', 1000), '5m': series('5m', 1000), '15m': series('15m', 1000), '1h': series('1h', 1000), '4h': series('4h', 1000), '1d': series('1d', 400) });
   for (const tf of C.SCANNER_ORDER) assert.ok(engine.series[tf].candles.length > 50, tf + ' seeded');
   const an = engine.tfState['5m'].analysis;
   assert.ok(an && an.zones.supply && an.condition);
@@ -281,9 +263,20 @@ const httpGet = (port, p) => new Promise((resolve, reject) => {
   const req = require('http').get({ host: '127.0.0.1', port, path: p, timeout: 5000 }, (res) => { let body = ''; res.on('data', d => { body += d; }); res.on('end', () => resolve({ status: res.statusCode, body })); });
   req.on('timeout', () => req.destroy(new Error('no response for ' + p))); req.on('error', reject);
 });
+/** A configuration with no data source (no exchange, feed, download or store in the project): the server runs offline. */
+function offlineConfig() {
+  const os = require('os'), fs = require('fs'), path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'btcm-test-'));
+  const file = path.join(dir, 'config.js');
+  fs.writeFileSync(file, `module.exports = ${JSON.stringify({
+    exchanges: {}, liquidations: { storeFile: path.join(dir, 'liquidations.json') }, calendar: { forexFactory: false },
+    assets: [], icons: { enabled: false }, proxy: '',
+  })};`);
+  return { dir, file };
+}
 test('server answers bad timeframes, malformed URLs and traversal attempts', async () => {
-  const port = await freePort();
-  const child = require('child_process').spawn(process.execPath, [require('path').join(__dirname, '..', 'server', 'index.js'), '--sim', '--port', String(port)], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const port = await freePort(), cfg = offlineConfig();
+  const child = require('child_process').spawn(process.execPath, [require('path').join(__dirname, '..', 'server', 'index.js'), '--config', cfg.file, '--port', String(port)], { stdio: ['ignore', 'pipe', 'pipe'] });
   let out = ''; child.stdout.on('data', d => { out += d; }); child.stderr.on('data', d => { out += d; });
   try {
     await waitFor(() => /dashboard: /.test(out), 15000);
@@ -303,7 +296,7 @@ test('server answers bad timeframes, malformed URLs and traversal attempts', asy
     });
     assert.strictEqual(snap.meta.tf, '5m');
     assert.ok(!/\[fatal\]/.test(out), 'server logged a fatal error:\n' + out);
-  } finally { child.kill('SIGKILL'); }
+  } finally { child.kill('SIGKILL'); require('fs').rmSync(cfg.dir, { recursive: true, force: true }); }
 });
 
 (async () => {

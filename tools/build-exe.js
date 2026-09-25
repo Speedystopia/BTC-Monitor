@@ -9,7 +9,7 @@
  *   than Node 22, which keeps the archive small; any Node >= 20.12 works)
  *
  *  Steps: bundle the server with esbuild -> generate the SEA blob (with the
- *  public/, core/ and config.js assets embedded) -> download the official
+ *  public/ and config.js assets embedded) -> download the official
  *  Windows node.exe of the same version from nodejs.org (SHA-256 verified)
  *  -> inject the blob with postject.
  * ========================================================================== */
@@ -64,7 +64,6 @@ async function download(url, file) {
   // 2. SEA config with embedded assets --------------------------------------
   const assets = {};
   for (const rel of walk(path.join(ROOT, 'public'), ROOT, [])) assets[rel] = path.join(ROOT, rel);
-  for (const rel of walk(path.join(ROOT, 'core'), ROOT, [])) assets[rel] = path.join(ROOT, rel);
   assets['config.js'] = path.join(ROOT, 'config.js');
   const seaCfg = { main: bundle, output: path.join(BUILD, 'sea-prep.blob'), disableExperimentalSEAWarning: true, useCodeCache: false, assets };
   fs.writeFileSync(path.join(BUILD, 'sea-config.json'), JSON.stringify(seaCfg, null, 2));

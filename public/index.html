@@ -13,7 +13,7 @@
 <div id="app">
   <!-- ============================================================ header -->
   <header class="topbar">
-    <div class="title">Bitcoin Live Educational <span class="pro">Pro</span> Chart <span class="mode hidden" id="modeBadge">SIMULATION</span></div>
+    <div class="title">Bitcoin Live Educational <span class="pro">Pro</span> Chart</div>
     <div class="assets" id="assets"></div>
   </header>
 
@@ -33,7 +33,6 @@
         <div class="ov rsibox" id="rsibox">RSI: <span class="v">—</span></div>
         <div class="ov scanner" id="scanner"><div class="sh"><span>Trend</span><span style="text-align:right">TF</span></div><div id="scannerRows"></div></div>
         <div class="ov pct" id="pct"></div>
-        <div class="ov simbadge hidden" id="simbadge">SIMULATED DATA</div>
         <div class="ov nodata hidden" id="nodata">WAITING FOR MARKET DATA<small id="nodataSub">connecting to exchanges…</small></div>
         <div class="toast" id="toast"></div>
         <button class="audiobtn hidden" id="audioBtn">🔊 ENABLE AUDIO ALERTS</button>
@@ -74,6 +73,6 @@
 <script src="chart.js"></script>
 <script src="audio.js"></script>
 <script src="app.js"></script>
-<script>BTCM_APP.start({ transport: 'ws' });</script>
+<script>BTCM_APP.start();</script>
 </body>
 </html>

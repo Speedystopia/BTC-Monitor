@@ -1,11 +1,7 @@
 /* ============================================================================
- *  core/indicators.js — pure indicator math (runs in Node and in the browser)
+ *  core/indicators.js — pure indicator math
  * ========================================================================== */
-(function (root, factory) {
-  const mod = factory();
-  if (typeof module !== 'undefined' && module.exports) module.exports = mod;
-  else { root.BTCM = root.BTCM || {}; root.BTCM.indicators = mod; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+module.exports = (function () {
   'use strict';
 
   /** Simple moving average (null until `len` values are available). */
@@ -132,4 +128,4 @@
   }
 
   return { sma, ema, emaFast, rsi, atr, momentumWave, trendState, pctChange };
-});
+})();
