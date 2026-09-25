@@ -44,10 +44,11 @@ window.BTCM_CHART = (function () {
   /**
    * Rasterize the heat columns of the visible candles into `canvas`: one pixel column per candle, one row per
    * device pixel from yRange.max (top) to yRange.min. A row sums the liquidity of the price buckets it covers;
-   * colours are scaled on the 98th percentile of the visible cells, so the biggest walls stand out.
+   * colours are scaled on the 98th percentile of the visible cells divided by `gain`, so the biggest walls stand
+   * out. Returns the USD per row shown at full colour (0 when there is nothing to draw).
    */
-  function rasterHeat(canvas, heat, vis, r, rows) {
-    const w = vis.length, span = r.max - r.min; if (!(span > 0) || !w) return false;
+  function rasterHeat(canvas, heat, vis, r, rows, gain) {
+    const w = vis.length, span = r.max - r.min; if (!(span > 0) || !w) return 0;
     const cells = new Float32Array(w * rows), perUsd = rows / span, step = heat.step;
     let n = 0;
     for (let k = 0; k < w; k++) {
@@ -63,11 +64,11 @@ window.BTCM_CHART = (function () {
         n++;
       }
     }
-    if (!n) return false;
+    if (!n) return 0;
     const stride = Math.max(1, Math.floor(cells.length / 40000)), sample = new Float32Array(Math.ceil(cells.length / stride));
     let m = 0; for (let i = 0; i < cells.length; i += stride) if (cells[i] > 0) sample[m++] = cells[i];
-    if (!m) return false;
-    const sorted = sample.subarray(0, m).sort(), ref = sorted[Math.min(m - 1, Math.floor(m * 0.98))] || 1;
+    if (!m) return 0;
+    const sorted = sample.subarray(0, m).sort(), ref = (sorted[Math.min(m - 1, Math.floor(m * 0.98))] || 1) / (gain > 0 ? gain : 1);
     if (canvas.width !== w || canvas.height !== rows) { canvas.width = w; canvas.height = rows; }
     const cx = canvas.getContext('2d'), img = cx.createImageData(w, rows), px = img.data;
     for (let i = 0; i < cells.length; i++) {
@@ -76,7 +77,7 @@ window.BTCM_CHART = (function () {
       px[o] = HEAT_LUT[li]; px[o + 1] = HEAT_LUT[li + 1]; px[o + 2] = HEAT_LUT[li + 2]; px[o + 3] = HEAT_LUT[li + 3];
     }
     cx.putImageData(img, 0, 0);
-    return true;
+    return ref;
   }
 
   function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
@@ -89,7 +90,7 @@ window.BTCM_CHART = (function () {
       this.candles = []; this.zones = null; this.markers = []; this.pending = null; this.condition = null;
       this.tick = null; this.book = null; this.tfMs = 300000; this.refLabel = 'CB';
       this.sessions = null; this.showSessions = true; // { maxTfMs, list } from the server
-      this.heat = null; this.showHeat = true; this._heatKey = ''; this._heatOk = false; this._heatCanvas = null; // { step, cols: Map(t -> col), version }
+      this.heat = null; this.showHeat = true; this.heatGain = 1; this._heatKey = ''; this._heatRef = 0; this._heatRows = 1; this._heatCanvas = null; // { step, cols: Map(t -> col), version }
       this.layout = null; this.yRange = null;
     }
     setSeries(candles, zones, markers, pending, condition) { this.candles = candles; this.zones = zones; this.markers = markers || []; this.pending = pending; this.condition = condition; }
@@ -136,6 +137,7 @@ window.BTCM_CHART = (function () {
       this.drawCondition(ctx, L, candles);
       this.drawLastPrice(ctx, L, h);
       this.drawTimeAxis(ctx, L, vis, h);
+      this.drawHeatLegend(ctx, L);
     }
     drawGrid(ctx, w, h, L) {
       const r = this.yRange; const step = U.niceStep(r.max - r.min, 9);
@@ -163,17 +165,36 @@ window.BTCM_CHART = (function () {
     }
     /** Order-book liquidity heatmap behind the candles (re-rasterized only when the data, the scale or the view change). */
     drawHeatmap(ctx, L, vis) {
-      const heat = this.heat; if (!this.showHeat || !heat || !heat.cols.size || !vis.length) return;
+      const heat = this.heat; if (!this.showHeat || !heat || !heat.cols.size || !vis.length) { this._heatRef = 0; return; }
       const r = this.yRange, rows = Math.max(1, Math.round(r.height * (window.devicePixelRatio || 1)));
-      const key = `${vis[0].t}|${vis.length}|${r.min}|${r.max}|${rows}|${heat.version}`;
+      const key = `${vis[0].t}|${vis.length}|${r.min}|${r.max}|${rows}|${heat.version}|${this.heatGain}`;
       if (key !== this._heatKey) {
-        this._heatKey = key;
+        this._heatKey = key; this._heatRows = rows;
         this._heatCanvas = this._heatCanvas || document.createElement('canvas');
-        this._heatOk = rasterHeat(this._heatCanvas, heat, vis, r, rows);
+        this._heatRef = rasterHeat(this._heatCanvas, heat, vis, r, rows, this.heatGain);
       }
-      if (!this._heatOk) return;
+      if (!this._heatRef) return;
       ctx.save(); ctx.imageSmoothingEnabled = false;
       ctx.drawImage(this._heatCanvas, L.x(L.start) - L.slot / 2, r.top, vis.length * L.slot, r.height);
+      ctx.restore();
+    }
+    /** Heatmap scale (bottom left): the colour ramp and the resting liquidity shown at full colour, per price band. */
+    drawHeatLegend(ctx, L) {
+      if (!this.showHeat || !(this._heatRef > 0)) return;
+      const r = this.yRange, band = Math.max(this.heat.step, (r.max - r.min) / this._heatRows); // price covered by one row
+      const x = L.plotLeft + 10, y = r.bottom - 40, barW = 90;
+      ctx.save(); ctx.font = `600 12px ${FONT}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      const title = 'LIQUIDITY HEATMAP' + (Math.abs(this.heatGain - 1) > 0.001 ? `  ×${this.heatGain}` : '');
+      const value = `${U.fmtUsd(this._heatRef)} / $${band < 10 ? band.toFixed(1) : Math.round(band)}`;
+      const w = Math.max(ctx.measureText(title).width, barW + 8 + ctx.measureText(value).width) + 16;
+      ctx.fillStyle = 'rgba(8,8,12,0.72)'; roundRect(ctx, x, y - 2, w, 38, 3); ctx.fill();
+      ctx.fillStyle = '#9a9a9a'; ctx.fillText(title, x + 8, y + 9);
+      for (let i = 0; i < barW; i++) {
+        const li = Math.round(i / (barW - 1) * 255) * 4;
+        ctx.fillStyle = `rgba(${HEAT_LUT[li]},${HEAT_LUT[li + 1]},${HEAT_LUT[li + 2]},${Math.max(0.2, HEAT_LUT[li + 3] / 255).toFixed(3)})`;
+        ctx.fillRect(x + 8 + i, y + 21, 1, 8);
+      }
+      ctx.fillStyle = '#d8d8d8'; ctx.fillText(value, x + 16 + barW, y + 25);
       ctx.restore();
     }
     /** Market sessions (like TradingView session indicators): a box from the session high to its low, name above. */

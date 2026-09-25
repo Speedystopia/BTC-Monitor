@@ -171,6 +171,18 @@ test('engine samples the books into heatmap columns for every chart timeframe', 
   assert.strictEqual(q[Math.round(84000 / 10) - col.b0], 255); // the 20 BTC bid is the biggest level
   assert.strictEqual(new Engine({ heatmap: { enabled: false } }).snapshot().heat, null);
 });
+test('the page snapshot holds the visible candles\' columns, older ones are served on request', () => {
+  const engine = new Engine({ chartTimeframes: ['1m'], visibleCandles: 5 }); let now = Date.UTC(2026, 8, 25, 12, 0, 0); engine.now = () => now;
+  engine.onTrade('a', { price: 84005, qty: 1, side: 'buy' });
+  engine.onBookSnapshot('a', [['84000', '20']], [['84010', '1']]);
+  for (let i = 0; i < 12 * 60; i++) { now += 1000; engine.onTrade('a', { price: 84005, qty: 0.01, side: 'buy' }); engine.tick(); } // 12 minutes
+  const snap = engine.snapshot('1m'), c = engine.series['1m'].candles;
+  assert.strictEqual(snap.heat.cols.length, 5); assert.strictEqual(snap.heat.from, c[c.length - 5].t);
+  assert.strictEqual(snap.heat.first, engine.heatmap.firstTime()); assert.ok(snap.heat.first <= c[1].t);
+  const older = engine.heatColumns('1m', c[0].t, snap.heat.from);
+  assert.strictEqual(older.length, c.length - 5); assert.ok(older.every(col => col.t < snap.heat.from));
+  assert.deepStrictEqual(engine.heatColumns('nope', 0, Infinity), []);
+});
 
 group('exchange parsers');
 test('binance trade / depth / ticker / forceOrder', () => {
@@ -486,8 +498,10 @@ test('HTTP API, static files and WebSocket routing by timeframe', async () => {
     engine.emit('message', { type: 'alert', tf: '1h' });
     await closed;
     assert.ok(logs.some(l => /too slow/.test(l)));
-    // a new snapshot once the candle history is loaded (pages opened at startup, before it)
+    // older heatmap columns on request, and a new snapshot once the candle history is loaded
     b.got.length = 0;
+    b.send(JSON.stringify({ type: 'heat', from: 0, to: null }));
+    await waitFor(() => b.got.some(m => m.type === 'heat' && m.req), 2000);
     engine.seedHistory({ '5m': [{ t: 1789400100000, o: 1, h: 2, l: 1, c: 2, v: 1 }, { t: 1789400400000, o: 2, h: 3, l: 2, c: 3, v: 1 }] });
     await waitFor(() => b.got.some(m => m.type === 'snapshot'), 2000);
     assert.strictEqual(b.got.find(m => m.type === 'snapshot').analysis.candles.length, 2);

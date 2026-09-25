@@ -55,6 +55,8 @@ function createApp({ engine, icons, readStatic, log }) {
         const m = JSON.parse(raw);
         if (m.type === 'hello' && engine.hasTf(m.tf)) ws.tf = m.tf;
         if (m.type === 'snapshot' || m.type === 'hello') ws.send(JSON.stringify(engine.snapshot(ws.tf)));
+        // older heatmap columns, for a page zoomed out or scrolled back (one request at a time per page)
+        if (m.type === 'heat' && Number.isFinite(m.from)) ws.send(JSON.stringify({ type: 'heat', tf: ws.tf, req: true, cols: engine.heatColumns(ws.tf, m.from, Number.isFinite(m.to) ? m.to : Infinity) }));
       } catch (e) { /* ignore */ }
     });
     ws.send(JSON.stringify(engine.snapshot(ws.tf)));

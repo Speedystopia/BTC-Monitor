@@ -11,9 +11,9 @@ window.BTCM_APP = (function () {
     tf: null, meta: null, candles: [], zones: null, markers: [], pending: null, condition: null, tfMs: 300000,
     tick: null, book: null, orders: [], liq: { totals: null, recent: [] }, assets: [], calendar: null, status: null, scanner: [], pct: [],
     icons: {}, connected: false, lastMsgAt: 0,
-    heat: { step: 10, cols: new Map(), version: 0 }, // liquidity heatmap: candle time -> { t, b0, s, q }
+    heat: { step: 10, cols: new Map(), version: 0, from: null, first: null, pending: false }, // liquidity heatmap: candle time -> { t, b0, s, q }
   };
-  let chart, osc, dirty = true;
+  let chart, osc, socket = null, dirty = true;
   const REF_LABELS = { coinbase: 'CB', binance: 'BN', kraken: 'KR', bybit: 'BB', okx: 'OKX', bitstamp: 'BS' };
 
   // ------------------------------------------------------------------ icons
@@ -55,7 +55,8 @@ window.BTCM_APP = (function () {
         chart.visible = osc.visible = Math.min(msg.meta.visibleCandles || 300, Math.max(40, state.candles.length)); chart.tfMs = msg.meta.tfMs;
         chart.refLabel = REF_LABELS[msg.meta.refExchange] || (msg.meta.refExchange || '').slice(0, 3).toUpperCase();
         chart.sessions = msg.meta.sessions || null;
-        state.heat = { step: msg.heat ? msg.heat.step : 10, cols: new Map(), version: 0 }; chart.heat = state.heat;
+        // heatmap: columns of the visible candles; older ones are asked for when needed (requestHeat)
+        state.heat = { step: msg.heat ? msg.heat.step : 10, cols: new Map(), version: 0, from: msg.heat && msg.heat.from != null ? msg.heat.from : Infinity, first: msg.heat ? msg.heat.first : null, pending: false }; chart.heat = state.heat;
         if (msg.heat) addHeat(msg.heat.cols);
         if (!viewReady) initView(msg.meta);
         renderMeta(); renderTfSwitcher(); renderScanner(); renderPct(); renderOrders(); renderLiq(); renderAssets(); renderCalendar(); renderStatus();
@@ -63,7 +64,7 @@ window.BTCM_APP = (function () {
         break;
       }
       case 'analysis': if (msg.tf === state.tf) { applyAnalysis(msg); renderMeta(); pruneHeat(); } break;
-      case 'heat': if (msg.tf === state.tf) addHeat(msg.cols); break;
+      case 'heat': if (msg.tf === state.tf) { addHeat(msg.cols); if (msg.req) state.heat.pending = false; } break;
       case 'tick': if (msg.tf === state.tf) applyTick(msg); break;
       case 'scanner': state.scanner = msg.scanner; renderScanner(); break;
       case 'pct': state.pct = msg.pct; renderPct(); break;
@@ -93,6 +94,17 @@ window.BTCM_APP = (function () {
     state.heat.version++; dirty = true;
   }
   function pruneHeat() { const first = state.candles.length ? state.candles[0].t : 0; for (const t of state.heat.cols.keys()) if (t < first) state.heat.cols.delete(t); }
+  /** Ask the server for the heatmap columns of candles zoomed or scrolled into view (100 more candles ahead). */
+  function requestHeat() {
+    const h = state.heat, L = chart.layout;
+    if (!view.heatmap || !h || h.first == null || h.pending || !L || !socket || socket.readyState !== 1) return;
+    const first = state.candles[L.start]; if (!first) return;
+    const from = Math.max(first.t - 100 * state.tfMs, Math.floor(h.first / state.tfMs) * state.tfMs);
+    if (!(from < h.from)) return;
+    h.pending = true;
+    socket.send(JSON.stringify({ type: 'heat', from, to: Number.isFinite(h.from) ? h.from : null }));
+    h.from = from;
+  }
   function applyTick(t) {
     state.tick = t; chart.tick = t;
     const c = state.candles; const last = c[c.length - 1];
@@ -215,7 +227,9 @@ window.BTCM_APP = (function () {
   // ------------------------------------------------------------------ display options
   // On by default when enabled in config.js; the keyboard (H, S) and the status-bar buttons toggle them (remembered
   // by this browser); the URL wins (?heatmap=0&sessions=1), handy for OBS browser sources.
+  // Heatmap intensity: [ and ] keys, ?heatgain=1.5, config.js heatmap.gain.
   const view = { heatmap: true, sessions: true };
+  const GAIN_MIN = 0.1, GAIN_MAX = 10;
   const VIEW_BTN = { heatmap: 'heatBtn', sessions: 'sessBtn' };
   let viewReady = false;
   const stored = (k) => { try { return localStorage.getItem('btcm.' + k); } catch (e) { return null; } };
@@ -224,9 +238,16 @@ window.BTCM_APP = (function () {
     const url = new URLSearchParams(location.search);
     const conf = { heatmap: !!(meta.heatmap && meta.heatmap.enabled), sessions: !(meta.sessions && meta.sessions.enabled === false) };
     for (const k of Object.keys(view)) { const s = stored(k); view[k] = url.has(k) ? url.get(k) !== '0' : s != null ? s === '1' : conf[k]; }
+    const g = [url.get('heatgain'), stored('heatgain'), meta.heatmap && meta.heatmap.gain].map(Number).find(v => v > 0);
+    chart.heatGain = Math.min(GAIN_MAX, Math.max(GAIN_MIN, g || 1));
     if (meta.alerts && meta.alerts.audio === false) { AU.setEnabled(false); syncAudioUi(); } // config.js alerts.audio
     $('heatBtn').classList.toggle('hidden', !conf.heatmap); // heatmap disabled in config.js: no data is collected
     applyView();
+  }
+  function setHeatGain(f) {
+    chart.heatGain = Math.min(GAIN_MAX, Math.max(GAIN_MIN, Math.round(chart.heatGain * f * 100) / 100));
+    try { localStorage.setItem('btcm.heatgain', String(chart.heatGain)); } catch (e) { /* storage unavailable */ }
+    dirty = true;
   }
   function toggleView(k) { view[k] = !view[k]; try { localStorage.setItem('btcm.' + k, view[k] ? '1' : '0'); } catch (e) { /* storage unavailable */ } applyView(); }
   function applyView() {
@@ -248,7 +269,7 @@ window.BTCM_APP = (function () {
     const url = `${proto}://${location.host}/ws${tf ? '?tf=' + encodeURIComponent(tf) : ''}`;
     let ws; let retry = 1000;
     const open = () => {
-      ws = new WebSocket(url);
+      ws = socket = new WebSocket(url);
       ws.onopen = () => { state.connected = true; retry = 1000; $('nodataSub').textContent = 'connected · waiting for the first trades…'; };
       ws.onmessage = (ev) => { try { handle(JSON.parse(ev.data)); } catch (e) { console.error(e); } };
       ws.onclose = () => { state.connected = false; $('nodata').classList.remove('hidden'); $('nodataSub').textContent = 'server connection lost — reconnecting…'; setTimeout(open, retry); retry = Math.min(retry * 2, 15000); };
@@ -259,7 +280,7 @@ window.BTCM_APP = (function () {
 
   // ------------------------------------------------------------------ render loop
   function loop() {
-    if (dirty) { dirty = false; try { chart.render(); osc.render(); } catch (e) { console.error(e); } }
+    if (dirty) { dirty = false; try { chart.render(); osc.render(); requestHeat(); } catch (e) { console.error(e); } }
     requestAnimationFrame(loop);
   }
   function start() {
@@ -280,12 +301,13 @@ window.BTCM_APP = (function () {
     btn.addEventListener('click', () => { AU.unlock(); AU.play('click'); setTimeout(syncAudioUi, 300); });
     ab.addEventListener('click', (e) => { e.stopPropagation(); AU.setEnabled(!AU.isEnabled()); if (AU.isEnabled()) { AU.unlock(); AU.play('click'); } syncAudioUi(); });
     setTimeout(() => { AU.unlock(); syncAudioUi(); }, 500);
-    // display options: buttons + keyboard (M: mute alerts, H: heatmap, S: sessions)
+    // display options: buttons + keyboard (M: mute alerts, H: heatmap, [ ]: heatmap intensity, S: sessions)
     for (const k of Object.keys(VIEW_BTN)) $(VIEW_BTN[k]).addEventListener('click', (e) => { e.stopPropagation(); toggleView(k); });
     document.addEventListener('keydown', (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const k = (e.key || '').toLowerCase();
       if (k === 'm') ab.click(); else if (k === 'h') toggleView('heatmap'); else if (k === 's') toggleView('sessions');
+      else if ((k === '[' || k === ']') && view.heatmap) setHeatGain(k === ']' ? 1.25 : 0.8);
     });
 
     setInterval(refreshAges, 1000);

@@ -91,9 +91,11 @@ module.exports = (function () {
       const { q, s } = quantize(vals);
       return { t, b0, s, q };
     }
+    /** Start of the oldest minute recorded (null before the first sample). */
+    firstTime() { return this.cols.length ? this.cols[0].t : this.cur ? this.cur.t : null; }
     /** Columns of the candles starting at `times` (candles without data are skipped). */
     columns(times, tfMs) {
-      const first = this.cols.length ? this.cols[0].t : this.cur ? this.cur.t : Infinity;
+      const first = this.firstTime(); if (first == null) return [];
       const out = [];
       for (const t of times) { if (t + tfMs <= first) continue; const c = this.column(t, tfMs); if (c) out.push(c); }
       return out;

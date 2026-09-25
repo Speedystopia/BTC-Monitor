@@ -97,7 +97,7 @@ module.exports = (function (I, C, A, H) {
       this.profile = null; // liquidity profile of the last book scan
       this._ordersDirty = false;
       // order-book liquidity heatmap (resting liquidity over time, averaged per minute)
-      this.hcfg = Object.assign({ enabled: true, rangePct: 3, historyHours: 72 }, this.cfg.heatmap || {});
+      this.hcfg = Object.assign({ enabled: true, rangePct: 3, historyHours: 72, gain: 1 }, this.cfg.heatmap || {});
       this.heatmap = this.hcfg.enabled ? new H.LiquidityHeatmap({ step: this.obcfg.bucketUsd, historyHours: this.hcfg.historyHours }) : null;
       this._lastHeatAt = 0;
       this.historyLoaded = false;
@@ -500,18 +500,28 @@ module.exports = (function (I, C, A, H) {
         if (cols.length) this.emit('message', { type: 'heat', tf, closed, cols }); // closed: final column of a candle, never skipped
       }
     }
-    /** Heatmap of the candles sent to a chart page. */
+    /** Heatmap columns of the chart candles of `tf` (the `chartCandles` sent to a page) that start in [from, to). */
+    heatColumns(tf, from, to) {
+      if (!this.heatmap || !this.hasTf(tf)) return [];
+      const s = this.series[tf], c = s.candles, times = [];
+      for (let i = Math.max(0, c.length - this.chartCandles); i < c.length; i++) if (c[i].t >= from && c[i].t < to) times.push(c[i].t);
+      return this.heatmap.columns(times, s.tfMs).map(H.encode);
+    }
+    /**
+     * Heatmap part of a page snapshot: the columns of the candles visible by default only; the page asks for
+     * older ones when it is zoomed out or scrolled back ({ type: 'heat', from, to }). first: oldest data.
+     */
     heatSnapshot(tf) {
       if (!this.heatmap) return null;
-      const s = this.series[tf], c = s.candles, times = [];
-      for (let i = Math.max(0, c.length - this.chartCandles); i < c.length; i++) times.push(c[i].t);
-      return { step: this.heatmap.step, cols: this.heatmap.columns(times, s.tfMs).map(H.encode) };
+      const c = this.series[tf].candles, n = Math.min(c.length, this.cfg.visibleCandles || 300);
+      const from = n ? c[c.length - n].t : null;
+      return { step: this.heatmap.step, from, first: this.heatmap.firstTime(), cols: from == null ? [] : this.heatColumns(tf, from, Infinity) };
     }
     snapshot(tf) {
       tf = this.hasTf(tf) ? tf : this.chartTf;
       return {
         type: 'snapshot', t: this.now(),
-        meta: { symbol: this.cfg.symbolLabel || 'Bitcoin / U.S. Dollar', tf, tfMs: C.TIMEFRAMES[tf], timeframes: this.chartTfs, visibleCandles: this.cfg.visibleCandles || 300, indicators: this.icfg, orderBook: this.obcfg, alerts: this.cfg.alerts || {}, refExchange: this.refExchange, icons: this.icons || {}, sessions: this.sessions, heatmap: { enabled: !!this.heatmap, rangePct: this.hcfg.rangePct } },
+        meta: { symbol: this.cfg.symbolLabel || 'Bitcoin / U.S. Dollar', tf, tfMs: C.TIMEFRAMES[tf], timeframes: this.chartTfs, visibleCandles: this.cfg.visibleCandles || 300, indicators: this.icfg, orderBook: this.obcfg, alerts: this.cfg.alerts || {}, refExchange: this.refExchange, icons: this.icons || {}, sessions: this.sessions, heatmap: { enabled: !!this.heatmap, rangePct: this.hcfg.rangePct, gain: this.hcfg.gain } },
         analysis: this.analysisMessage(tf),
         scanner: this.scanner, pct: this.pct,
         book: this.profile, heat: this.heatSnapshot(tf), orders: this.feed,

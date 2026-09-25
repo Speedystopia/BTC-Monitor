@@ -107,7 +107,7 @@ Tout se règle dans `config.js` (redémarrer le serveur après modification).
 | `indicators` | longueurs EMA / RSI, seuils de surachat-survente, EMA du scanner, fenêtre des zones, seuils du Momentum Wave, confirmation de la condition de marché |
 | `assets` | panneau multi-actifs : source `binance` / `coinbase` (crypto, temps réel) ou `yahoo` (or, S&P 500, DXY…) |
 | `calendar` | calendrier économique : flux hebdomadaire public, impact minimum, événements manuels |
-| `heatmap` | heatmap de liquidité : `enabled`, `rangePct` (± % autour du prix enregistré, défaut 3), `historyHours` (historique conservé, défaut 72 h, dans `storeFile` = `data/heatmap.json`) |
+| `heatmap` | heatmap de liquidité : `enabled`, `rangePct` (± % autour du prix enregistré, défaut 3), `historyHours` (historique conservé, défaut 72 h, dans `storeFile` = `data/heatmap.json`), `gain` (intensité par défaut, 1) |
 | `sessions` | sessions de marché dessinées sur le graphique : nom, `start` / `end` (heures **UTC**, ou heures locales avec `tz` = fuseau IANA, heure d'été comprise, ex. `tz: 'Europe/London'`), couleur ; `maxTimeframe` (défaut `1h`) ; `enabled` |
 | `alerts` | alertes audio / visuelles activées (`audio: false` = alertes sonores coupées par défaut) |
 | `proxy` | proxy HTTP(S) sortant optionnel (réseaux d'entreprise) |
@@ -133,7 +133,7 @@ manualEvents: [
 | **RSI** | RSI 14 (Wilder). Surachat ≥ 70 / survente ≤ 30 : halo rouge / vert, bandeau et son. |
 | **MOMENTUM WAVE** (panneau bas) | Oscillateur de momentum (type WaveTrend ×2, plage ≈ ±250). Vert quand il est au-dessus de son signal, rouge sinon ; les barres verticales marquent les croisements. |
 | **LAST CHANGE : BULLISH / BEARISH** + étiquette **BULLISH / BEARISH CONDITION** | Condition de marché : clôture au-dessus / en dessous de l'EMA 50, changement validé après `conditionConfirmBars` (2) clôtures consécutives de l'autre côté. Le texte en haut à droite donne l'état courant et l'ancienneté du dernier changement ; l'étiquette verte / rouge posée sur la bougie du changement (*BULLISH CONDITION* + RSI à cet instant) le situe sur le graphique ; un son est joué à chaque bascule. |
-| **Heatmap de liquidité** (derrière les bougies) | Carte de chaleur des ordres limites **au repos** du carnet agrégé (tous les exchanges, achats + ventes) : chaque seconde, la liquidité est relevée par tranche de `bucketUsd` (10 $) jusqu'à ± `rangePct` du prix, puis moyennée par minute ; la colonne d'une bougie est la moyenne de ses minutes. Les gros ordres qui restent en place (murs) forment des **bandes horizontales** lumineuses (bleu → cyan → jaune → rouge = de plus en plus de liquidité), les cotations qui clignotent s'effacent. Les exchanges ne fournissent pas l'historique de leurs carnets : la heatmap se construit à partir du lancement du serveur et est conservée 72 h (`data/heatmap.json`, survit aux redémarrages). |
+| **Heatmap de liquidité** (derrière les bougies) | Carte de chaleur des ordres limites **au repos** du carnet agrégé (tous les exchanges, achats + ventes) : chaque seconde, la liquidité est relevée par tranche de `bucketUsd` (10 $) jusqu'à ± `rangePct` du prix, puis moyennée par minute ; la colonne d'une bougie est la moyenne de ses minutes. Les gros ordres qui restent en place (murs) forment des **bandes horizontales** lumineuses (bleu → cyan → jaune → rouge = de plus en plus de liquidité), les cotations qui clignotent s'effacent. Les exchanges ne fournissent pas l'historique de leurs carnets : la heatmap se construit à partir du lancement du serveur et est conservée 72 h (`data/heatmap.json`, survit aux redémarrages). La légende (en bas à gauche) donne la liquidité affichée en couleur pleine, par tranche de prix (ex. `$2.4M / $10`) ; les touches **[** et **]** baissent / montent l'intensité. La page reçoit les colonnes des bougies visibles, puis celles des bougies plus anciennes quand on dézoome ou qu'on remonte le temps. |
 | **Sessions de marché** (Sydney, Asia, Frankfurt, London, New York) | Comme les indicateurs de sessions de TradingView : pour chaque session de chaque jour, une boîte qui va du plus haut au plus bas des bougies de la session, avec son nom au-dessus. Horaires UTC par défaut, qui couvrent les 24 h sans chevauchement : Sydney 21:00-23:00, Asia 23:00-07:00, Frankfurt 07:00-08:00, London 08:00-13:00, New York 13:00-21:00. Pour suivre les vrais horaires d'une place (qui bougent d'une heure au changement d'heure), donner l'heure locale et le fuseau : `{ name: 'London', start: '08:00', end: '16:30', tz: 'Europe/London' }`. Affichées jusqu'au timeframe 1 h ; la session en cours s'agrandit avec les bougies. |
 | **Trend / TF** (scanner) | Pour chaque timeframe 1 m → 1 D : pastille verte si la clôture est au-dessus de l'EMA 21 de ce timeframe, flèche ⬆ si l'EMA monte. |
 | **6H … 1M** | Variation du prix indice par rapport à la clôture 6 h, 12 h, 24 h, 48 h, 72 h, 1 semaine et 30 jours plus tôt. |
@@ -147,10 +147,11 @@ manualEvents: [
 « **Composite · 5 exchanges** » dans l'en-tête indique que le chandelier est l'indice composite de 5 exchanges
 connectés (source de données active).
 
-Raccourcis : **M** = couper / réactiver le son, **H** = afficher / masquer la heatmap, **S** = afficher / masquer les
-sessions (aussi via les boutons *HEATMAP* et *SESSIONS* en bas, choix mémorisés par le navigateur), molette sur le
-graphique = zoom. Dans l'adresse, `?heatmap=0` / `?sessions=0` (ou `=1`) imposent le choix quel que soit celui mémorisé
-(utile pour une source OBS : `http://localhost:8787/?tf=15m&heatmap=1&sessions=0`).
+Raccourcis : **M** = couper / réactiver le son, **H** = afficher / masquer la heatmap, **[** / **]** = intensité de la
+heatmap, **S** = afficher / masquer les sessions (aussi via les boutons *HEATMAP* et *SESSIONS* en bas, choix mémorisés
+par le navigateur), molette sur le graphique = zoom. Dans l'adresse, `?heatmap=0` / `?sessions=0` (ou `=1`) et
+`?heatgain=1.5` imposent le choix quel que soit celui mémorisé (utile pour une source OBS :
+`http://localhost:8787/?tf=15m&heatmap=1&sessions=0&heatgain=1.5`).
 
 ---
 
