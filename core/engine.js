@@ -271,7 +271,7 @@
         if (m < cut) { L.buckets.delete(m); continue; }
         L.long += b[0]; L.short += b[1]; L.count += b[2]; if (L.first == null || m < L.first) L.first = m;
       }
-      if (L.recent.length && Math.floor(L.recent[0].ts / C.MIN) < cut) L.recent = L.recent.filter(e => Math.floor(e.ts / C.MIN) >= cut);
+      L.recent = L.recent.filter(e => Math.floor(e.ts / C.MIN) >= cut); // <= 25 events; they may arrive out of order
     }
     liqTotals() { const L = this.liq; return { total: L.long + L.short, long: L.long, short: L.short, count: L.count, since: L.first == null ? null : L.first * C.MIN }; }
     recentLiquidations() { return this.liq.recent.slice().reverse(); } // newest first
