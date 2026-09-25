@@ -37,8 +37,8 @@ démarre le mode simulation (marché synthétique, sans internet).
 **Avec Node.js (toutes plateformes, développement)** :
 
 ```bash
-cd btc-monitor
-npm install          # une seule dépendance : ws
+cd BTC-Monitor
+npm install          # ws (+ https-proxy-agent / undici, optionnels, pour le proxy)
 npm start            # données live multi-exchanges (ajouter --open pour ouvrir le navigateur)
 ```
 
@@ -72,7 +72,7 @@ Autres commandes :
 | `npm start` | serveur live (port 8787 par défaut) |
 | `npm run sim` | mode **simulation** : marché synthétique, aucune connexion internet nécessaire |
 | `node server/index.js --port 9000` | changer le port |
-| `npm test` | tests unitaires (indicateurs, moteur, parseurs des exchanges) |
+| `npm test` | tests (indicateurs, moteur, parseurs des exchanges, simulateur, serveur HTTP / WebSocket) — lancés aussi par la CI GitHub sur Node 18 à 24 |
 | `npm run build:demo` | génère `dist/demo.html`, une page autonome (simulation embarquée) |
 | `npm run build:exe` | reconstruit `BTC-Monitor.exe` (Windows x64) à partir des sources |
 
@@ -206,8 +206,10 @@ Flux : exchanges → adaptateurs (événements normalisés) → `Engine` → mes
   `icons.sources` pour le remplacer.
 * **Pas de son** : les navigateurs exigent un clic sur la page avant de jouer un son —
   cliquer sur *ENABLE AUDIO ALERTS* (dans OBS, cocher *Contrôler l'audio via OBS*).
-* **Réseau avec proxy** : renseigner `proxy` dans `config.js` puis
-  `npm install https-proxy-agent@7 undici`.
+* **Réseau avec proxy** : renseigner `proxy` dans `config.js` (la variable d'environnement `HTTPS_PROXY`
+  est reprise par défaut). Les modules nécessaires sont installés avec les dépendances (version Node.js ;
+  l'exécutable Windows ne gère pas le proxy). Proxy qui inspecte le TLS : indiquer son certificat racine
+  via la variable d'environnement `NODE_EXTRA_CA_CERTS`.
 
 ## 6. Limites connues
 

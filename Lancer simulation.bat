@@ -16,7 +16,7 @@ if errorlevel 1 (
   start "" https://nodejs.org/
   goto :end
 )
-if not exist "node_modules\ws" call npm install --no-audit --no-fund
+if not exist "node_modules\ws" call npm install --omit=dev --no-audit --no-fund
 node server\index.js --sim --open %*
 :end
 echo.

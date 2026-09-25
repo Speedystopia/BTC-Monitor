@@ -1,0 +1,5 @@
+# Windows batch files keep their CRLF line endings exactly as stored (cmd.exe label parsing needs them)
+*.bat     -text
+# shell launchers keep LF, even in a Windows checkout with core.autocrlf=true
+*.sh      text eol=lf
+*.command text eol=lf

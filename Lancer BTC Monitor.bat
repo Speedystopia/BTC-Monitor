@@ -21,7 +21,7 @@ if errorlevel 1 (
 )
 if not exist "node_modules\ws" (
   echo Installation des dependances ^(une seule fois^)...
-  call npm install --no-audit --no-fund
+  call npm install --omit=dev --no-audit --no-fund
 )
 node server\index.js --open %*
 :end
