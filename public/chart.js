@@ -7,8 +7,8 @@ window.BTCM_CHART = (function () {
   const FONT = '"Barlow Condensed", "Roboto Condensed", "Arial Narrow", Arial, sans-serif';
   const COLORS = {
     up: '#22c55e', down: '#ef4444', upBright: '#2ee56b', downBright: '#ff5252', ema: '#b6ff3b',
-    grid: 'rgba(255,255,255,0.06)', axisText: '#b5b5b5', supply: 'rgba(34,197,94,0.20)', supplyEdge: 'rgba(34,197,94,0.55)',
-    demand: 'rgba(255,140,0,0.30)', demandEdge: 'rgba(255,140,0,0.7)', marker: '#1e40af', markerText: '#ffffff', markerTri: '#60a5fa',
+    grid: 'rgba(255,255,255,0.06)', axisText: '#b5b5b5', supply: 'rgba(239,68,68,0.18)', supplyEdge: 'rgba(239,68,68,0.6)',
+    demand: 'rgba(34,197,94,0.18)', demandEdge: 'rgba(34,197,94,0.6)', marker: '#1e40af', markerText: '#ffffff', markerTri: '#60a5fa',
     bidProfile: 'rgba(34,197,94,0.32)', askProfile: 'rgba(239,68,68,0.32)', watermark: 'rgba(255,255,255,0.05)',
   };
 
@@ -220,8 +220,8 @@ window.BTCM_CHART = (function () {
         const lx = (ly > sc0 && ly < sc1) ? L.plotLeft + 232 : L.plotLeft + 10;
         ctx.fillText(label, lx, ly);
       };
-      draw(z.supply, COLORS.supply, COLORS.supplyEdge, 'SUPPLY ZONE', '#3ddc84', true);
-      draw(z.demand, COLORS.demand, COLORS.demandEdge, 'DEMAND ZONE', '#ffa726', true);
+      draw(z.supply, COLORS.supply, COLORS.supplyEdge, 'SUPPLY ZONE', '#ff6b6b', true); // supply = resistance: red
+      draw(z.demand, COLORS.demand, COLORS.demandEdge, 'DEMAND ZONE', '#3ddc84', true); // demand = support: green
     }
     drawCandles(ctx, L, vis) {
       const bodyW = Math.max(1, Math.floor(L.slot * 0.62));
