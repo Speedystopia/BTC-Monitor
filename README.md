@@ -163,7 +163,7 @@ btc-monitor/
 │   └── feeds/                un adaptateur par exchange (trades, carnet, liquidations, historique)
 │       ├── binance.js  coinbase.js  kraken.js  bybit.js  okx.js  bitstamp.js
 ├── core/                     moteur partagé (Node + navigateur)
-│   ├── indicators.js         SMA, EMA, RSI, ATR, Momentum Wave, pivots…
+│   ├── indicators.js         SMA, EMA, RSI, ATR, Momentum Wave, tendance, variations
 │   ├── candles.js            timeframes, séries de bougies, fusion composite
 │   ├── analysis.js           zones, retournements, condition, scanner, variations
 │   ├── engine.js             prix indice, bougies live, carnet agrégé, feed, liquidations, messages

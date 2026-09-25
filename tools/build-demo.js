@@ -21,7 +21,7 @@ const app = html.slice(bodyStart, bodyEnd).trim();
 const demoConfig = {
   chartTimeframe: '5m', chartTimeframes: ['1m', '3m', '5m', '15m', '1h', '4h', '8h', '12h', '1d'], chartCandles: 900, visibleCandles: 300, referenceExchange: 'coinbase',
   orderBook: { bucketUsd: 10, profileRangePct: 1.5, largeOrderUsd: 100000, largeTradeUsd: 50000, feedMax: 40, removedRowTtlSec: 20, feedRangePct: 2, minRestMs: 3000 },
-  indicators: { emaLength: 50, rsiLength: 14, rsiOverbought: 70, rsiOversold: 30, scannerEma: 21, zoneLookback: 288, pivotStrength: 6, waveOverbought: 120, waveOversold: -120, reversalWindow: 6, conditionConfirmBars: 2 },
+  indicators: { emaLength: 50, rsiLength: 14, rsiOverbought: 70, rsiOversold: 30, scannerEma: 21, zoneLookback: 288, waveOverbought: 120, waveOversold: -120, reversalWindow: 6, conditionConfirmBars: 2 },
   assets: [
     { label: 'ETHUSD', icon: 'eth' }, { label: 'GOLD', icon: 'gold' }, { label: 'XRPUSD', icon: 'xrp' },
     { label: 'SP500', icon: 'sp500' }, { label: 'SOLUSD', icon: 'sol' }, { label: 'DXY', icon: 'dxy' },

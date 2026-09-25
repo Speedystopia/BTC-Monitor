@@ -62,7 +62,6 @@ window.BTCM_UTIL = (function () {
     return `${p(d)}:${p(h)}:${p(m)}:${p(sec)}`;
   }
   function fmtClock(ms) { const p = (n) => String(n).padStart(2, '0'); const s = Math.max(0, Math.floor(ms / 1000)); const h = Math.floor(s / 3600); return h > 0 ? `${h}:${p(Math.floor((s % 3600) / 60))}:${p(s % 60)}` : `${p(Math.floor(s / 60))}:${p(s % 60)}`; }
-  function fmtTime(t) { const d = new Date(t); const p = (n) => String(n).padStart(2, '0'); return `${p(d.getHours())}:${p(d.getMinutes())}`; }
   function fmtDate(t) { const d = new Date(t); const p = (n) => String(n).padStart(2, '0'); return `${p(d.getDate())}/${p(d.getMonth() + 1)}`; }
   function tfName(tf) {
     const m = { '1m': ['M1', '1 MINUTE TIME FRAME'], '3m': ['M3', '3 MINUTE TIME FRAME'], '5m': ['M5', '5 MINUTE TIME FRAME'], '15m': ['M15', '15 MINUTE TIME FRAME'], '30m': ['M30', '30 MINUTE TIME FRAME'],
@@ -81,5 +80,5 @@ window.BTCM_UTIL = (function () {
   }
   function el(id) { return document.getElementById(id); }
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-  return { fmtPrice, fmtUsd, fmtK, fmtPct, fmtSigned, fmtAge, fmtMinAgo, fmtCountdown, fmtClock, fmtTime, fmtDate, tfName, tfShort, fmtAxisTime, niceStep, el, escapeHtml };
+  return { fmtPrice, fmtUsd, fmtK, fmtPct, fmtSigned, fmtAge, fmtMinAgo, fmtCountdown, fmtClock, fmtDate, tfName, tfShort, fmtAxisTime, niceStep, el, escapeHtml };
 })();

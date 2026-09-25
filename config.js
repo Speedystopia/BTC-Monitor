@@ -58,7 +58,6 @@ module.exports = {
     rsiOversold: 30,
     scannerEma: 21,         // EMA used by the multi-timeframe trend scanner
     zoneLookback: 288,      // candles scanned for supply/demand zones (288 x 5m = 24h)
-    pivotStrength: 6,       // bars on each side to confirm a swing high/low
     waveOverbought: 120,    // Momentum Wave thresholds used by reversal detection
     waveOversold: -120,
     reversalWindow: 6,      // bars after an extreme in which a cross confirms a reversal

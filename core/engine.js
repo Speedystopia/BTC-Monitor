@@ -30,9 +30,6 @@
   /** One exchange's local order book. */
   class LocalBook {
     constructor(id) { this.id = id; this.bids = new Map(); this.asks = new Map(); this.updatedAt = 0; this.ready = false; this.depth = 0; }
-    clear() { this.bids.clear(); this.asks.clear(); this.ready = false; }
-    bestBid() { let b = 0; for (const p of this.bids.keys()) if (p > b) b = p; return b; }
-    bestAsk() { let a = Infinity; for (const p of this.asks.keys()) if (p < a) a = p; return a === Infinity ? 0 : a; }
     size() { return this.bids.size + this.asks.size; }
     /** Keep the `depth` best levels of each side (for feeds that do not delete levels pushed out of their depth). */
     truncate() { if (this.depth) { trimSide(this.bids, this.depth, (a, b) => b - a); trimSide(this.asks, this.depth, (a, b) => a - b); } }
@@ -66,21 +63,19 @@
       this.recentTrades = []; // {ts, qty, side, usd}
       this.books = {};        // id -> LocalBook
       this.feed = [];         // large order / trade rows
-      this.feedSeq = 0;
       this.levelSince = new Map();   // level key -> first time it exceeded the threshold
       this.tradeRows = [];           // recent large trades
       this._lastFeedAt = 0; this._feedSig = '';
       this._resetLiquidations(); // rolling 24h, per-minute buckets
       this.assets = {};       // label -> {label, price, pct, ts}
-      this.calendar = { events: [], next: null, updatedAt: 0 };
-      this.statusExtra = {};
+      this.calendar = { events: [], updatedAt: 0 };
 
       // per chart timeframe: analysis + alert state
       this.tfState = {};
       for (const tf of this.chartTfs) this.tfState[tf] = { analysis: null, rsiState: null, lastConditionState: null, lastMarkerKey: null };
       this.scanner = []; this.pct = [];
       this._lastAnalysisAt = 0; this._lastScanAt = 0; this._lastBookAt = 0; this._lastStatusAt = 0; this._lastOrdersAt = 0;
-      this._ordersDirty = false; this._lastIndexEmitted = 0; this._lastTickAt = 0;
+      this._ordersDirty = false;
       this.historyLoaded = false;
       this.startedAt = this.now();
     }

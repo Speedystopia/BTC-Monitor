@@ -12,7 +12,7 @@ window.BTCM_APP = (function () {
     tick: null, book: null, orders: [], liq: { totals: null, recent: [] }, assets: [], calendar: null, status: null, scanner: [], pct: [],
     icons: {}, connected: false, lastMsgAt: 0,
   };
-  let chart, osc, dirty = true, transport = null, localCtx = null; // localCtx: in-browser engine (demo)
+  let chart, osc, dirty = true, localCtx = null; // localCtx: in-browser engine (demo)
   const REF_LABELS = { coinbase: 'CB', binance: 'BN', kraken: 'KR', bybit: 'BB', okx: 'OKX', bitstamp: 'BS' };
 
   // ------------------------------------------------------------------ icons
@@ -246,7 +246,7 @@ window.BTCM_APP = (function () {
     setInterval(refreshAges, 1000);
     setInterval(() => { if (state.tick && Date.now() - state.lastMsgAt > 15000) { $('nodata').classList.remove('hidden'); $('nodataSub').textContent = 'no market data received for 15 s'; } }, 5000);
     $('nodata').classList.remove('hidden');
-    transport = opts.transport === 'local' ? connectLocal(opts) : connectWs();
+    if (opts.transport === 'local') connectLocal(opts); else connectWs();
     requestAnimationFrame(loop);
   }
 

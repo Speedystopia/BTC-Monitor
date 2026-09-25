@@ -15,7 +15,7 @@
 
   const DEFAULTS = {
     emaLength: 50, rsiLength: 14, rsiOverbought: 70, rsiOversold: 30, scannerEma: 21,
-    zoneLookback: 288, pivotStrength: 6, waveOverbought: 120, waveOversold: -120,
+    zoneLookback: 288, waveOverbought: 120, waveOversold: -120,
     reversalWindow: 6, conditionConfirmBars: 2,
   };
 
