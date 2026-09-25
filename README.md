@@ -125,7 +125,7 @@ manualEvents: [
 
 | Élément | Fonctionnement |
 |---|---|
-| **Chandelier composite** | À chaque transaction reçue, un *prix indice* est recalculé : moyenne des derniers prix de chaque exchange pondérée par son volume récent (décroissance exponentielle 15 min, les flux muets > 60 s sont exclus). Les bougies (13 timeframes) sont construites sur cet indice ; le volume est la somme des exchanges. L'historique est chargé par REST sur chaque exchange puis fusionné (OHLC pondérés par les volumes). |
+| **Chandelier composite** | À chaque transaction reçue, un *prix indice* est recalculé : moyenne des derniers prix de chaque exchange pondérée par son volume récent (décroissance exponentielle 15 min, les flux muets > 60 s sont exclus). Les bougies (14 timeframes) sont construites sur cet indice ; le volume est la somme des exchanges. L'historique est chargé par REST sur chaque exchange puis fusionné (OHLC pondérés par les volumes). |
 | **EMA 50** (ligne vert citron) | Tendance du timeframe du graphique ; sert aussi à la condition de marché. |
 | **SUPPLY ZONE / DEMAND ZONE** | Recalculées **à chaque clôture de bougie** : la zone d'offre part du plus haut des `zoneLookback` dernières bougies clôturées (288 bougies, soit 24 h en 5 min, 12 jours en 1 h…) et descend de max(amplitude de cette bougie, 1 ATR) ; la zone de demande part du plus bas et monte de la même épaisseur. La bande est pleine à partir de la bougie qui a formé l'extrême et estompée avant. Quand une clôture dépasse l'extrême, la zone se déplace sur le nouveau sommet / creux ; quand l'ancien extrême sort de la fenêtre, elle glisse sur le suivant. La bougie en cours n'est jamais prise en compte (règle de confirmation). |
 | **POSSIBLE REVERSAL** | Croisement du Momentum Wave sous / sur son signal peu après un extrême (Wave ≥ ±120 ou RSI ≥ 70 / ≤ 30). Le marqueur est posé sur le plus haut / plus bas de la fenêtre. Sur la bougie en cours il apparaît en transparence (*non confirmé*) et n'est validé qu'à la clôture — règle de confirmation de bougie. |
@@ -136,7 +136,7 @@ manualEvents: [
 | **6H … 1M** | Variation du prix indice par rapport à la clôture 6 h, 12 h, 24 h, 48 h, 72 h, 1 semaine et 30 jours plus tôt. |
 | **Colonne gauche** (carnet d'ordres) | Les plus gros ordres limites **au repos** agrégés sur tous les exchanges (≥ `largeOrderUsd`, à ± `feedRangePct` du prix, présents depuis ≥ `minRestMs`), les plus récents en haut ; vert = achat (bid), rouge = vente (ask), l'intensité suit la taille. Le logo indique l'exchange (survol = nom + état) ; `✕` ordre retiré / exécuté (barré), `⚡` transaction unitaire ≥ `largeTradeUsd`. L'âge est le temps depuis l'apparition de l'ordre. |
 | **Profil de liquidité** (barres à gauche du graphique) | Liquidité agrégée du carnet par tranche de `bucketUsd` : vert = bids, rouge = asks. |
-| **24H TOTAL LIQUIDATIONS** | Somme glissante 24 h des liquidations futures (Binance, Bybit, OKX) : LONG = positions longues liquidées, SHORT = positions courtes. Persisté dans `data/liquidations.json` pour survivre aux redémarrages. |
+| **24H TOTAL LIQUIDATIONS** | Somme glissante 24 h des liquidations futures (Binance, Bybit, OKX) : LONG = positions longues liquidées, SHORT = positions courtes. Agrégée par minute et persistée dans `data/liquidations.json` (écriture atomique, sauvegarde aussi à l'arrêt) pour survivre aux redémarrages. |
 | **Next Economic Event** | Prochain événement (impact ≥ `minImpact`) du flux hebdomadaire public + événements manuels, compte à rebours `JJ:HH:MM:SS`. |
 | **Panneau multi-actifs** | ETH, XRP, SOL en temps réel (Binance), GOLD / SP500 / DXY par sondage (Yahoo Finance, ~90 s). |
 | **Bas de page** | Prix indice, variation 24 h, volume échangé sur la dernière minute (tous exchanges) avec jauge achat / vente, état des sources (pastilles + part de volume), timeframe. |
@@ -166,6 +166,7 @@ btc-monitor/
 │   ├── assets.js             cotations Yahoo Finance (or, indices, DXY)
 │   ├── icons.js              logos (GitHub) mis en cache dans data/icons
 │   └── feeds/                un adaptateur par exchange (trades, carnet, liquidations, historique)
+│       ├── index.js    registre des adaptateurs (ajouter un exchange ici)
 │       ├── binance.js  coinbase.js  kraken.js  bybit.js  okx.js  bitstamp.js
 ├── core/                     moteur partagé (Node + navigateur)
 │   ├── indicators.js         SMA, EMA, RSI, ATR, Momentum Wave, tendance, variations
@@ -176,7 +177,8 @@ btc-monitor/
 ├── public/                   interface (index.html, styles.css, chart.js, app.js, audio.js, util.js)
 ├── tools/build-demo.js       page démo autonome
 ├── tools/build-exe.js        construction de BTC-Monitor.exe (esbuild + Node SEA + postject)
-└── test/run.js               tests
+├── test/run.js               tests (npm test)
+└── .github/workflows/ci.yml  intégration continue (tests sur Node 18 à 24)
 ```
 
 Flux : exchanges → adaptateurs (événements normalisés) → `Engine` → messages WebSocket
