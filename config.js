@@ -77,12 +77,16 @@ module.exports = {
     conditionConfirmBars: 2 // consecutive closes needed to flip the market condition
   },
 
-  // Market sessions drawn as boxes (session high / low) on the charts up to `maxTimeframe`.
-  // Hours are UTC; a session that ends before it starts runs past midnight. Toggle on the page: S key.
+  // Market sessions drawn as boxes (session high / low) on the charts up to `maxTimeframe`. Toggle on the page: S key.
+  // Hours are UTC (the default list covers the 24 hours); a session that ends before it starts runs past midnight.
+  // Add `tz` (IANA time zone) to give local exchange hours that follow daylight saving time, e.g.
+  //   { name: 'London', start: '08:00', end: '16:30', tz: 'Europe/London', color: '#66bb6a' }
+  //   { name: 'New York', start: '09:30', end: '16:00', tz: 'America/New_York', color: '#42a5f5' }
   sessions: {
     enabled: true,
     maxTimeframe: '1h',
     list: [
+      { name: 'Sydney',    start: '21:00', end: '23:00', color: '#26a69a' },
       { name: 'Asia',      start: '23:00', end: '07:00', color: '#ff9800' },
       { name: 'Frankfurt', start: '07:00', end: '08:00', color: '#ba68c8' },
       { name: 'London',    start: '08:00', end: '13:00', color: '#66bb6a' },

@@ -11,10 +11,11 @@ module.exports = (function (I, C, A, H) {
 
   const EXCHANGE_NAMES = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', bybit: 'Bybit', okx: 'OKX', bitstamp: 'Bitstamp' };
   const USDT_QUOTED = { binance: true, bybit: true, okx: true };
-  // market sessions drawn on intraday charts (UTC hours); config.js `sessions` overrides them
+  // market sessions drawn on intraday charts (UTC hours, the 24h covered); config.js `sessions` overrides them
   const SESSIONS = {
     enabled: true, maxTimeframe: '1h',
     list: [
+      { name: 'Sydney', start: '21:00', end: '23:00', color: '#26a69a' },
       { name: 'Asia', start: '23:00', end: '07:00', color: '#ff9800' },
       { name: 'Frankfurt', start: '07:00', end: '08:00', color: '#ba68c8' },
       { name: 'London', start: '08:00', end: '13:00', color: '#66bb6a' },
@@ -28,6 +29,12 @@ module.exports = (function (I, C, A, H) {
     on(ev, fn) { (this._h[ev] = this._h[ev] || []).push(fn); return () => this.off(ev, fn); }
     off(ev, fn) { const a = this._h[ev]; if (!a) return; const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); }
     emit(ev, data) { const a = this._h[ev]; if (!a) return; for (const fn of a.slice()) { try { fn(data); } catch (e) { console.error('listener error', e); } } }
+  }
+
+  /** Session time zone: IANA name (daylight saving time included) or UTC by default. */
+  function validZone(s) {
+    if (!s.tz) return true;
+    try { new Intl.DateTimeFormat('en-US', { timeZone: String(s.tz) }); return true; } catch (e) { console.warn(`[sessions] unknown time zone "${s.tz}" (session ${s.name}): skipped`); return false; }
   }
 
   /** One exchange's local order book. */
@@ -51,7 +58,7 @@ module.exports = (function (I, C, A, H) {
       const sc = Object.assign({}, SESSIONS, this.cfg.sessions || {});
       this.sessions = {
         enabled: sc.enabled !== false, maxTfMs: C.TIMEFRAMES[sc.maxTimeframe] || C.HOUR,
-        list: (Array.isArray(sc.list) ? sc.list : []).filter(s => s && s.start && s.end).map(s => ({ name: String(s.name || ''), start: String(s.start), end: String(s.end), color: String(s.color || '#9e9e9e') })),
+        list: (Array.isArray(sc.list) ? sc.list : []).filter(s => s && s.start && s.end && validZone(s)).map(s => ({ name: String(s.name || ''), start: String(s.start), end: String(s.end), tz: String(s.tz || 'UTC'), color: String(s.color || '#9e9e9e') })),
       };
       this.now = () => Date.now();
 

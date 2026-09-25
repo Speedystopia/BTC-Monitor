@@ -111,10 +111,29 @@ test('session boxes follow UTC hours, overnight and running sessions included', 
 });
 test('engine sends the session settings, with defaults for older config files', () => {
   const meta = new Engine({}).snapshot().meta;
-  assert.deepStrictEqual(meta.sessions.list.map(s => s.name), ['Asia', 'Frankfurt', 'London', 'New York']);
+  assert.deepStrictEqual(meta.sessions.list.map(s => s.name), ['Sydney', 'Asia', 'Frankfurt', 'London', 'New York']);
+  // the default sessions tile the 24 hours: each one starts where the previous one ends
+  const S = require('../public/sessions'), m = meta.sessions.list.map(x => [S.minutes(x.start), S.minutes(x.end)]);
+  for (let i = 0; i < m.length; i++) assert.strictEqual(m[i][1], m[(i + 1) % m.length][0], meta.sessions.list[i].name);
+  assert.strictEqual(m.reduce((sum, [a, b]) => sum + ((b - a + 1440) % 1440), 0), 1440);
   assert.strictEqual(meta.sessions.maxTfMs, C.HOUR);
-  const custom = new Engine({ sessions: { maxTimeframe: '15m', list: [{ name: 'X', start: '01:00', end: '02:00' }, { name: 'bad' }] } }).snapshot().meta.sessions;
-  assert.deepStrictEqual([custom.maxTfMs, custom.list.length, custom.list[0].color], [15 * C.MIN, 1, '#9e9e9e']);
+  const warn = console.warn; console.warn = () => {};
+  const custom = new Engine({ sessions: { maxTimeframe: '15m', list: [{ name: 'X', start: '01:00', end: '02:00' }, { name: 'bad' }, { name: 'Y', start: '01:00', end: '02:00', tz: 'Mars/Olympus' }] } }).snapshot().meta.sessions;
+  console.warn = warn;
+  assert.deepStrictEqual([custom.maxTfMs, custom.list.length, custom.list[0].color, custom.list[0].tz], [15 * C.MIN, 1, '#9e9e9e', 'UTC']);
+});
+test('sessions in a local time zone follow daylight saving time', () => {
+  const S = require('../public/sessions'), H = C.HOUR;
+  const from = Date.UTC(2026, 9, 23), candles = []; // 1h candles, 23 -> 27 Oct 2026 (Europe leaves summer time on the 25th)
+  for (let t = from; t < from + 4 * C.DAY; t += H) candles.push({ t, o: 1, h: 2, l: 0, c: 1 });
+  const london = S.sessionBoxes(candles, [{ name: 'London', start: '08:00', end: '16:30', tz: 'Europe/London' }]);
+  const hours = london.map(b => new Date(b.start).toISOString().slice(5, 16));
+  assert.deepStrictEqual(hours, ['10-23T07:00', '10-24T07:00', '10-25T08:00', '10-26T08:00']); // 08:00 BST = 07:00 UTC, then 08:00 GMT
+  assert.strictEqual(london[3].end - london[3].start, 8.5 * H);
+  const ny = S.sessionBoxes(candles, [{ name: 'NY', start: '09:30', end: '16:00', tz: 'America/New_York' }]);
+  assert.strictEqual(new Date(ny[0].start).toISOString().slice(11, 16), '13:30'); // EDT (UTC-4) until 1 Nov
+  assert.deepStrictEqual(S.sessionBoxes(candles, [{ name: 'bad', start: '01:00', end: '02:00', tz: 'Mars/Olympus' }]), []);
+  assert.strictEqual(S.zonedTime(2026, 11, 1, 9 * 60, 'Asia/Tokyo'), Date.UTC(2026, 11, 1, 0, 0)); // 09:00 JST = 00:00 UTC
 });
 
 group('heatmap');
