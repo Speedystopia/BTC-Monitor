@@ -1,0 +1,59 @@
+# ============================================================================
+#  BTC Monitor on a server (a VPS with Docker): dashboard, HTTPS, live stream.
+#    cp .env.example .env                    # then fill it in
+#    docker compose up -d --build            # dashboard only: http://127.0.0.1:8787 on the server
+#    docker compose --profile https up -d    # + https://DOMAIN (Caddy, automatic certificate)
+#    docker compose --profile stream up -d   # + live stream to YouTube / Twitch
+#    docker compose --profile https --profile stream up -d   # all of it
+#  Logs: docker compose logs -f streamer
+# ============================================================================
+services:
+  btc-monitor:
+    build: .
+    image: btc-monitor
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"      # this server only; the public goes through Caddy
+    volumes:
+      - btcm-data:/app/data         # liquidations, heatmap, logos (kept across updates)
+      # - ./config.js:/app/config.js:ro   # your own settings
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on: [btc-monitor]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data            # certificates
+      - caddy-config:/config
+
+  streamer:
+    build: ./deploy/stream
+    image: btc-monitor-streamer
+    profiles: ["stream"]
+    restart: unless-stopped
+    depends_on:
+      btc-monitor:
+        condition: service_healthy
+    environment:
+      PAGE_URL: ${STREAM_PAGE:-http://btc-monitor:8787/?tf=5m}
+      YOUTUBE_STREAM_KEY: ${YOUTUBE_STREAM_KEY:-}
+      TWITCH_STREAM_KEY: ${TWITCH_STREAM_KEY:-}
+      RTMP_URLS: ${RTMP_URLS:-}
+      WIDTH: ${STREAM_WIDTH:-1920}
+      HEIGHT: ${STREAM_HEIGHT:-1080}
+      FPS: ${STREAM_FPS:-30}
+      VIDEO_BITRATE: ${STREAM_BITRATE:-6000k}
+      AUDIO: ${STREAM_AUDIO:-1}
+
+volumes:
+  btcm-data:
+  caddy-data:
+  caddy-config:

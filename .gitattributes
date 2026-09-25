@@ -3,3 +3,7 @@
 # shell launchers keep LF, even in a Windows checkout with core.autocrlf=true
 *.sh      text eol=lf
 *.command text eol=lf
+# files read inside Linux containers keep LF too
+Dockerfile text eol=lf
+Caddyfile  text eol=lf
+*.yml      text eol=lf

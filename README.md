@@ -85,6 +85,38 @@ OBS sur un **second PC** : le serveur n'écoute par défaut que sur l'ordinateur
 Mettre `host: '0.0.0.0'` dans `config.js` (ou lancer avec `--host 0.0.0.0`), autoriser le programme dans le
 pare-feu, puis utiliser `http://<adresse IP du PC qui fait tourner BTC Monitor>:8787` dans OBS.
 
+### Sur un serveur : adresse web et direct YouTube / Twitch 24 h/24 (Docker)
+
+Sur un serveur loué (VPS Linux avec [Docker](https://docs.docker.com/engine/install/)), sans PC allumé :
+
+```bash
+git clone https://github.com/Speedystopia/BTC-Monitor.git && cd BTC-Monitor
+cp .env.example .env        # puis le remplir : domaine, clés de stream
+docker compose up -d --build                                # tableau de bord seul (http://127.0.0.1:8787 sur le serveur)
+docker compose --profile https up -d                        # + https://votre-domaine (certificat automatique)
+docker compose --profile stream up -d --build               # + direct YouTube / Twitch
+docker compose --profile https --profile stream up -d       # les trois
+docker compose logs -f streamer                             # suivre le direct
+```
+
+* **Adresse web** (`--profile https`) : [Caddy](https://caddyserver.com) sert le tableau de bord en HTTPS sur le domaine
+  `DOMAIN` de `.env` (le nom de domaine doit pointer vers le serveur, ports 80 et 443 ouverts). Pour le réserver à
+  vous, décommenter le bloc `basic_auth` de `deploy/Caddyfile` (instructions dans le fichier).
+* **Direct** (`--profile stream`, dossier `deploy/stream/`) : Chromium affiche la page sur un écran virtuel et ffmpeg
+  envoie l'image et les alertes sonores vers YouTube (`YOUTUBE_STREAM_KEY`), Twitch (`TWITCH_STREAM_KEY`) et toute
+  autre adresse RTMP (`RTMP_URLS`). L'image est encodée une seule fois ; chaque plateforme a son propre relais qui se
+  reconnecte seul (Twitch coupe un direct au bout de 48 h) sans interrompre les autres. Page, timeframe et options
+  comme dans OBS : `STREAM_PAGE=http://btc-monitor:8787/?tf=15m&heatgain=1.5`.
+* **Ressources** mesurées : 1920×1080 à 30 i/s ≈ 1 cœur et 700 Mo de mémoire pour le direct, 1280×720 environ la
+  moitié. Les vCPU de VPS étant souvent plus lents, prévoir 2 vCPU et 2 Go de mémoire au total pour le 1080p ;
+  débit montant ≈ 6 Mb/s par plateforme.
+* **Réglages** : monter votre `config.js` sur `/app/config.js` (ligne prévue dans `docker-compose.yml`) ; les données
+  (liquidations, heatmap) sont conservées dans le volume `btcm-data`. Mise à jour :
+  `git pull && docker compose --profile stream up -d --build`.
+* Choisir un serveur **en Europe** : Binance, Bybit et OKX refusent les adresses américaines. Les cotations Yahoo
+  (or, S&P 500, DXY) viennent d'un accès non officiel prévu pour un usage personnel : pour un direct public, vérifier
+  leurs conditions ou retirer ces actifs de `config.js`.
+
 ---
 
 ## 2. Configuration — `config.js`
@@ -166,6 +198,10 @@ btc-monitor/
 ├── Lancer BTC Monitor.bat    lanceur Windows (exe, ou Node.js si présent)
 ├── start.command / start.sh  lanceurs macOS / Linux (Node.js requis)
 ├── config.js                 réglages
+├── Dockerfile                image du serveur (Node 24) ; docker-compose.yml : serveur + HTTPS + direct
+├── deploy/
+│   ├── Caddyfile             HTTPS (certificat automatique), mot de passe optionnel
+│   └── stream/               image de diffusion YouTube / Twitch (Chromium, Xvfb, PulseAudio, ffmpeg)
 ├── server/
 │   ├── index.js              point d'entrée : configuration, sauvegardes, sources de données
 │   ├── http.js               serveur HTTP + WebSocket (fichiers, API, diffusion aux pages, clients lents)
