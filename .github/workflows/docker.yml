@@ -1,0 +1,46 @@
+name: Docker
+
+# Builds the dashboard and streamer images and checks that they work: the dashboard answers, and the
+# streamer sends the page to a local RTMP server. Runs when the Docker files or the dependencies change.
+on:
+  push:
+    branches: [main]
+    paths: [Dockerfile, .dockerignore, docker-compose.yml, 'deploy/**', package.json, package-lock.json, .github/workflows/docker.yml]
+  pull_request:
+    paths: [Dockerfile, .dockerignore, docker-compose.yml, 'deploy/**', package.json, package-lock.json, .github/workflows/docker.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose file
+        run: docker compose --profile https --profile stream config --quiet
+      - name: Dashboard image
+        run: docker build -t btc-monitor .
+      - name: Streamer image
+        run: docker build -t btc-monitor-streamer deploy/stream
+      - name: Dashboard answers, streamer goes on air
+        run: |
+          docker network create btcm-ci
+          docker run -d --name btc-monitor --network btcm-ci -p 127.0.0.1:8787:8787 btc-monitor
+          for i in $(seq 30); do curl -fs -o /dev/null http://127.0.0.1:8787/api/health && break; sleep 2; done
+          curl -fsS -o /dev/null http://127.0.0.1:8787/
+          mkdir -m 777 out
+          docker run -d --name rtmp --network btcm-ci -v "$PWD/out:/out" --entrypoint ffmpeg btc-monitor-streamer \
+            -hide_banner -loglevel warning -listen 1 -i rtmp://0.0.0.0:1935/live/ci-key -c copy -f flv /out/ci.flv
+          docker run -d --name streamer --network btcm-ci -e RTMP_URLS=rtmp://rtmp:1935/live/ci-key \
+            -e WIDTH=1280 -e HEIGHT=720 -e VIDEO_BITRATE=2500k btc-monitor-streamer
+          # grep without -q reads all the logs (with -q, the early close could fail the pipe under pipefail)
+          for i in $(seq 60); do docker logs streamer 2>&1 | grep "on air" > /dev/null && break; sleep 2; done
+          docker logs streamer
+          docker logs streamer 2>&1 | grep "on air"
+          sleep 5
+          docker run --rm -v "$PWD/out:/out" --entrypoint ffprobe btc-monitor-streamer \
+            -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 /out/ci.flv | tee probe.txt
+          grep "h264,1280,720" probe.txt
+          docker stop streamer rtmp btc-monitor
