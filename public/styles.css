@@ -125,6 +125,8 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 .statusline { display: flex; align-items: center; gap: 12px; font-family: var(--font-cond); font-size: 13px; letter-spacing: .8px; color: #cfcfcf; text-transform: uppercase; white-space: nowrap; min-width: 0; }
 .statusline .alerts { color: #fff; font-weight: 700; cursor: pointer; pointer-events: auto; }
 .statusline .alerts.off { color: #777; }
+.statusline .opt { color: #fff; font-weight: 700; cursor: pointer; pointer-events: auto; }
+.statusline .opt.off { color: #666; }
 .statusline .src { display: flex; gap: 8px; }
 .statusline .src span { display: inline-flex; align-items: center; gap: 4px; }
 .statusline .srcic { width: 14px; height: 14px; border-radius: 50%; object-fit: cover; }

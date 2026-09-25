@@ -106,7 +106,8 @@ Tout se règle dans `config.js` (redémarrer le serveur après modification).
 | `indicators` | longueurs EMA / RSI, seuils de surachat-survente, EMA du scanner, fenêtre des zones, seuils du Momentum Wave, confirmation de la condition de marché |
 | `assets` | panneau multi-actifs : source `binance` / `coinbase` (crypto, temps réel) ou `yahoo` (or, S&P 500, DXY…) |
 | `calendar` | calendrier économique : flux hebdomadaire public, impact minimum, événements manuels |
-| `alerts` | alertes audio / visuelles activées |
+| `sessions` | sessions de marché dessinées sur le graphique : nom, heures **UTC** (`start` / `end`), couleur ; `maxTimeframe` (défaut `1h`) ; `enabled` |
+| `alerts` | alertes audio / visuelles activées (`audio: false` = alertes sonores coupées par défaut) |
 | `proxy` | proxy HTTP(S) sortant optionnel (réseaux d'entreprise) |
 
 Exemple d'événement manuel :
@@ -130,6 +131,7 @@ manualEvents: [
 | **RSI** | RSI 14 (Wilder). Surachat ≥ 70 / survente ≤ 30 : halo rouge / vert, bandeau et son. |
 | **MOMENTUM WAVE** (panneau bas) | Oscillateur de momentum (type WaveTrend ×2, plage ≈ ±250). Vert quand il est au-dessus de son signal, rouge sinon ; les barres verticales marquent les croisements. |
 | **LAST CHANGE : BULLISH / BEARISH** + étiquette **BULLISH / BEARISH CONDITION** | Condition de marché : clôture au-dessus / en dessous de l'EMA 50, changement validé après `conditionConfirmBars` (2) clôtures consécutives de l'autre côté. Le texte en haut à droite donne l'état courant et l'ancienneté du dernier changement ; l'étiquette verte / rouge posée sur la bougie du changement (*BULLISH CONDITION* + RSI à cet instant) le situe sur le graphique ; un son est joué à chaque bascule. |
+| **Sessions de marché** (Asia, Frankfurt, London, New York) | Comme les indicateurs de sessions de TradingView : pour chaque session de chaque jour, une boîte qui va du plus haut au plus bas des bougies de la session, avec son nom au-dessus (horaires UTC par défaut : Asia 23:00-07:00, Frankfurt 07:00-08:00, London 08:00-13:00, New York 13:00-21:00, modifiables dans `config.js`). Affichées jusqu'au timeframe 1 h ; la session en cours s'agrandit avec les bougies. |
 | **Trend / TF** (scanner) | Pour chaque timeframe 1 m → 1 D : pastille verte si la clôture est au-dessus de l'EMA 21 de ce timeframe, flèche ⬆ si l'EMA monte. |
 | **6H … 1M** | Variation du prix indice par rapport à la clôture 6 h, 12 h, 24 h, 48 h, 72 h, 1 semaine et 30 jours plus tôt. |
 | **Colonne gauche** (carnet d'ordres) | Les plus gros ordres limites **au repos** agrégés sur tous les exchanges (≥ `largeOrderUsd`, à ± `feedRangePct` du prix, présents depuis ≥ `minRestMs`), les plus récents en haut ; vert = achat (bid), rouge = vente (ask), l'intensité suit la taille. Le logo indique l'exchange (survol = nom + état) ; `✕` ordre retiré / exécuté (barré), `⚡` transaction unitaire ≥ `largeTradeUsd`. L'âge est le temps depuis l'apparition de l'ordre. |
@@ -142,7 +144,9 @@ manualEvents: [
 « **Composite · 5 exchanges** » dans l'en-tête indique que le chandelier est l'indice composite de 5 exchanges
 connectés (source de données active).
 
-Raccourcis : **M** = couper / réactiver le son, molette sur le graphique = zoom.
+Raccourcis : **M** = couper / réactiver le son, **S** = afficher / masquer les sessions (aussi via le bouton *SESSIONS*
+en bas, choix mémorisé par le navigateur), molette sur le graphique = zoom. Dans l'adresse, `?sessions=0`
+(ou `=1`) impose le choix quel que soit celui mémorisé (utile pour une source OBS : `http://localhost:8787/?tf=15m&sessions=0`).
 
 ---
 

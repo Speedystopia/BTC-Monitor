@@ -93,6 +93,30 @@ test('scanner returns 13 timeframes', () => {
   assert.strictEqual(sc.length, 13); assert.ok(sc.every(s => s.bull === true && s.up === true));
 });
 
+group('sessions');
+test('session boxes follow UTC hours, overnight and running sessions included', () => {
+  const S = require('../public/sessions');
+  const day = Date.UTC(2026, 8, 22), H = C.HOUR;
+  // 15m candles from 22 Sep 00:00 to 23 Sep 11:45 UTC; price = hour of the day, so highs / lows are easy to check
+  const candles = []; for (let t = day; t < day + 36 * H; t += 15 * C.MIN) { const h = new Date(t).getUTCHours(); candles.push({ t, o: h, h: h + 0.5, l: h - 0.5, c: h }); }
+  const boxes = S.sessionBoxes(candles, [{ name: 'Asia', start: '23:00', end: '07:00' }, { name: 'London', start: '08:00', end: '13:00' }]);
+  const asia = boxes.filter(b => b.name === 'Asia'), london = boxes.filter(b => b.name === 'London');
+  assert.strictEqual(asia.length, 2); // 21 Sep 23:00 -> 22 Sep 07:00 (partly before the data) and 22 Sep 23:00 -> 23 Sep 07:00
+  assert.strictEqual(asia[0].start, day - H); assert.strictEqual(candles[asia[0].i0].t, day); assert.strictEqual(candles[asia[0].i1].t, day + 7 * H - 15 * C.MIN);
+  assert.deepStrictEqual([asia[1].start, asia[1].end, asia[1].lo, asia[1].hi], [day + 23 * H, day + 31 * H, -0.5, 23.5]);
+  assert.strictEqual(london.length, 2); // 22 Sep complete, 23 Sep still running
+  assert.deepStrictEqual([london[0].lo, london[0].hi], [7.5, 12.5]);
+  assert.strictEqual(candles[london[1].i1].t, day + 36 * H - 15 * C.MIN);
+  assert.strictEqual(S.minutes('7:05'), 425); assert.strictEqual(S.minutes('25:00'), null);
+});
+test('engine sends the session settings, with defaults for older config files', () => {
+  const meta = new Engine({}).snapshot().meta;
+  assert.deepStrictEqual(meta.sessions.list.map(s => s.name), ['Asia', 'Frankfurt', 'London', 'New York']);
+  assert.strictEqual(meta.sessions.maxTfMs, C.HOUR);
+  const custom = new Engine({ sessions: { maxTimeframe: '15m', list: [{ name: 'X', start: '01:00', end: '02:00' }, { name: 'bad' }] } }).snapshot().meta.sessions;
+  assert.deepStrictEqual([custom.maxTfMs, custom.list.length, custom.list[0].color], [15 * C.MIN, 1, '#9e9e9e']);
+});
+
 group('exchange parsers');
 test('binance trade / depth / ticker / forceOrder', () => {
   const t = feeds.binance.parse('{"stream":"btcusdt@trade","data":{"e":"trade","E":1,"s":"BTCUSDT","t":1,"p":"78860.00000000","q":"0.00009000","T":1789404776250,"m":true,"M":true}}');

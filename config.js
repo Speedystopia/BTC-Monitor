@@ -67,6 +67,19 @@ module.exports = {
     conditionConfirmBars: 2 // consecutive closes needed to flip the market condition
   },
 
+  // Market sessions drawn as boxes (session high / low) on the charts up to `maxTimeframe`.
+  // Hours are UTC; a session that ends before it starts runs past midnight. Toggle on the page: S key.
+  sessions: {
+    enabled: true,
+    maxTimeframe: '1h',
+    list: [
+      { name: 'Asia',      start: '23:00', end: '07:00', color: '#ff9800' },
+      { name: 'Frankfurt', start: '07:00', end: '08:00', color: '#ba68c8' },
+      { name: 'London',    start: '08:00', end: '13:00', color: '#66bb6a' },
+      { name: 'New York',  start: '13:00', end: '21:00', color: '#42a5f5' },
+    ],
+  },
+
   // Multi-asset reference panel (top right). source: "binance" | "coinbase" | "yahoo"
   assets: [
     { label: 'ETHUSD', source: 'binance', symbol: 'ETHUSDT', icon: 'eth' },

@@ -40,6 +40,7 @@ window.BTCM_CHART = (function () {
       this.axisWidth = 118; this.visible = 300; this.rightPad = 9;
       this.candles = []; this.zones = null; this.markers = []; this.pending = null; this.condition = null;
       this.tick = null; this.book = null; this.tfMs = 300000; this.refLabel = 'CB';
+      this.sessions = null; this.showSessions = true; // { maxTfMs, list } from the server
       this.layout = null; this.yRange = null;
     }
     setSeries(candles, zones, markers, pending, condition) { this.candles = candles; this.zones = zones; this.markers = markers || []; this.pending = pending; this.condition = condition; }
@@ -77,6 +78,7 @@ window.BTCM_CHART = (function () {
       ctx.fillText('₿', L.plotRight / 2, h / 2 + 10); ctx.restore();
 
       this.drawGrid(ctx, w, h, L);
+      this.drawSessions(ctx, L);
       this.drawProfile(ctx, L);
       this.drawZones(ctx, L, vis);
       this.drawCandles(ctx, L, vis);
@@ -108,6 +110,23 @@ window.BTCM_CHART = (function () {
         if (bid > 0) { ctx.fillStyle = COLORS.bidProfile; ctx.fillRect(L.plotLeft, y, Math.max(1, bid / max * maxW), hPx); }
         if (ask > 0) { ctx.fillStyle = COLORS.askProfile; ctx.fillRect(L.plotLeft, y, Math.max(1, ask / max * maxW), hPx); }
       }
+    }
+    /** Market sessions (like TradingView session indicators): a box from the session high to its low, name above. */
+    drawSessions(ctx, L) {
+      const S = window.BTCM_SESSIONS, cfg = this.sessions;
+      if (!this.showSessions || !S || !cfg || !cfg.list || this.tfMs > cfg.maxTfMs) return;
+      ctx.save(); ctx.font = `600 13px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.lineWidth = 1;
+      for (const b of S.sessionBoxes(this.candles, cfg.list)) {
+        if (b.i1 < L.start) continue;
+        const x1 = Math.max(L.plotLeft, L.x(b.i0) - L.slot / 2), x2 = Math.min(L.axisX, L.x(b.i1) + L.slot / 2);
+        if (x2 - x1 < 1) continue;
+        const y1 = Math.round(this.priceToY(b.hi)) + 0.5, y2 = Math.round(this.priceToY(b.lo)) + 0.5;
+        ctx.fillStyle = ctx.strokeStyle = b.color;
+        ctx.globalAlpha = 0.1; ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.globalAlpha = 0.65; ctx.strokeRect(Math.round(x1) + 0.5, y1, Math.round(x2 - x1), y2 - y1);
+        ctx.globalAlpha = 0.95; ctx.fillText(b.name, (x1 + x2) / 2, y1 - 3);
+      }
+      ctx.restore();
     }
     xOfTime(t, L, vis) {
       // x position of a candle open time, or the left edge when it is off-screen

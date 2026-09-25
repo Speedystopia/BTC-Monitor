@@ -43,6 +43,8 @@ window.BTCM_APP = (function () {
         if (msg.price) state.tick = Object.assign({}, state.tick || {}, { p: msg.price });
         chart.visible = osc.visible = Math.min(msg.meta.visibleCandles || 300, Math.max(40, state.candles.length)); chart.tfMs = msg.meta.tfMs;
         chart.refLabel = REF_LABELS[msg.meta.refExchange] || (msg.meta.refExchange || '').slice(0, 3).toUpperCase();
+        chart.sessions = msg.meta.sessions || null;
+        if (!viewReady) initView(msg.meta);
         renderMeta(); renderTfSwitcher(); renderScanner(); renderPct(); renderOrders(); renderLiq(); renderAssets(); renderCalendar(); renderStatus();
         document.title = `BTC ${U.tfShort(state.tf)} — Bitcoin Live Educational Pro Chart`;
         break;
@@ -180,6 +182,33 @@ window.BTCM_APP = (function () {
     AU.play(a.kind);
   }
 
+  // ------------------------------------------------------------------ display options
+  // On by default when enabled in config.js; the keyboard (S) and the status-bar buttons toggle them (remembered
+  // by this browser); the URL wins (?sessions=0), handy for OBS browser sources.
+  const view = { sessions: true };
+  const VIEW_BTN = { sessions: 'sessBtn' };
+  let viewReady = false;
+  const stored = (k) => { try { return localStorage.getItem('btcm.' + k); } catch (e) { return null; } };
+  function initView(meta) {
+    viewReady = true;
+    const url = new URLSearchParams(location.search);
+    const conf = { sessions: !(meta.sessions && meta.sessions.enabled === false) };
+    for (const k of Object.keys(view)) { const s = stored(k); view[k] = url.has(k) ? url.get(k) !== '0' : s != null ? s === '1' : conf[k]; }
+    if (meta.alerts && meta.alerts.audio === false) { AU.setEnabled(false); syncAudioUi(); } // config.js alerts.audio
+    applyView();
+  }
+  function toggleView(k) { view[k] = !view[k]; try { localStorage.setItem('btcm.' + k, view[k] ? '1' : '0'); } catch (e) { /* storage unavailable */ } applyView(); }
+  function applyView() {
+    chart.showSessions = view.sessions;
+    for (const k of Object.keys(VIEW_BTN)) { const b = $(VIEW_BTN[k]); if (b) b.classList.toggle('off', !view[k]); }
+    dirty = true;
+  }
+  function syncAudioUi() {
+    const ab = $('alertsBtn');
+    ab.textContent = AU.isEnabled() ? 'ALERTS ACTIVE' : 'ALERTS MUTED'; ab.classList.toggle('off', !AU.isEnabled());
+    $('audioBtn').classList.toggle('hidden', !AU.isEnabled() || AU.isUnlocked());
+  }
+
   // ------------------------------------------------------------------ server connection
   function pageTf() { const p = new URLSearchParams(location.search); return (p.get('tf') || '').toLowerCase(); }
   function connectWs() {
@@ -202,8 +231,7 @@ window.BTCM_APP = (function () {
     if (dirty) { dirty = false; try { chart.render(); osc.render(); } catch (e) { console.error(e); } }
     requestAnimationFrame(loop);
   }
-  function start(opts) {
-    opts = opts || {};
+  function start() {
     chart = new CH.ChartRenderer($('chart')); osc = new CH.OscRenderer($('osc'));
     window.addEventListener('resize', () => { dirty = true; });
     new ResizeObserver(() => { dirty = true; }).observe($('chartwrap'));
@@ -211,17 +239,21 @@ window.BTCM_APP = (function () {
     renderLogo();
     // zoom with the mouse wheel
     $('chartwrap').addEventListener('wheel', (e) => { e.preventDefault(); const v = Math.round(chart.visible * (e.deltaY > 0 ? 1.15 : 0.87)); chart.visible = osc.visible = Math.max(40, Math.min(state.candles.length || 900, v)); dirty = true; }, { passive: false });
-    // audio
-    AU.setEnabled(!(opts.audio === false));
+    // audio (default: config.js alerts.audio, applied with the first snapshot)
     const btn = $('audioBtn'), ab = $('alertsBtn');
-    const syncAudioUi = () => { ab.textContent = AU.isEnabled() ? 'ALERTS ACTIVE' : 'ALERTS MUTED'; ab.classList.toggle('off', !AU.isEnabled()); btn.classList.toggle('hidden', !AU.isEnabled() || AU.isUnlocked()); };
     const tryUnlock = () => { AU.unlock(); setTimeout(syncAudioUi, 200); };
     document.addEventListener('pointerdown', tryUnlock);
     document.addEventListener('keydown', tryUnlock);
     btn.addEventListener('click', () => { AU.unlock(); AU.play('click'); setTimeout(syncAudioUi, 300); });
     ab.addEventListener('click', (e) => { e.stopPropagation(); AU.setEnabled(!AU.isEnabled()); if (AU.isEnabled()) { AU.unlock(); AU.play('click'); } syncAudioUi(); });
     setTimeout(() => { AU.unlock(); syncAudioUi(); }, 500);
-    document.addEventListener('keydown', (e) => { if (e.key === 'm' || e.key === 'M') ab.click(); });
+    // display options: buttons + keyboard (M: mute alerts, S: sessions)
+    for (const k of Object.keys(VIEW_BTN)) $(VIEW_BTN[k]).addEventListener('click', (e) => { e.stopPropagation(); toggleView(k); });
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = (e.key || '').toLowerCase();
+      if (k === 'm') ab.click(); else if (k === 's') toggleView('sessions');
+    });
 
     setInterval(refreshAges, 1000);
     setInterval(() => { if (state.tick && Date.now() - state.lastMsgAt > 15000) { $('nodata').classList.remove('hidden'); $('nodataSub').textContent = 'no market data received for 15 s'; } }, 5000);

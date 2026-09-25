@@ -11,6 +11,16 @@ module.exports = (function (I, C, A) {
 
   const EXCHANGE_NAMES = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', bybit: 'Bybit', okx: 'OKX', bitstamp: 'Bitstamp' };
   const USDT_QUOTED = { binance: true, bybit: true, okx: true };
+  // market sessions drawn on intraday charts (UTC hours); config.js `sessions` overrides them
+  const SESSIONS = {
+    enabled: true, maxTimeframe: '1h',
+    list: [
+      { name: 'Asia', start: '23:00', end: '07:00', color: '#ff9800' },
+      { name: 'Frankfurt', start: '07:00', end: '08:00', color: '#ba68c8' },
+      { name: 'London', start: '08:00', end: '13:00', color: '#66bb6a' },
+      { name: 'New York', start: '13:00', end: '21:00', color: '#42a5f5' },
+    ],
+  };
 
   /** Tiny event emitter. */
   class Emitter {
@@ -38,6 +48,11 @@ module.exports = (function (I, C, A) {
       this.chartTf = this.cfg.chartTimeframe || '5m';               // default page timeframe
       this.chartTfs = (this.cfg.chartTimeframes || C.CHART_TFS).filter(tf => C.TIMEFRAMES[tf]);
       if (!this.chartTfs.includes(this.chartTf)) this.chartTfs.unshift(this.chartTf);
+      const sc = Object.assign({}, SESSIONS, this.cfg.sessions || {});
+      this.sessions = {
+        enabled: sc.enabled !== false, maxTfMs: C.TIMEFRAMES[sc.maxTimeframe] || C.HOUR,
+        list: (Array.isArray(sc.list) ? sc.list : []).filter(s => s && s.start && s.end).map(s => ({ name: String(s.name || ''), start: String(s.start), end: String(s.end), color: String(s.color || '#9e9e9e') })),
+      };
       this.now = () => Date.now();
 
       // candle series for all timeframes
@@ -427,7 +442,7 @@ module.exports = (function (I, C, A) {
       tf = this.hasTf(tf) ? tf : this.chartTf;
       return {
         type: 'snapshot',
-        meta: { symbol: this.cfg.symbolLabel || 'Bitcoin / U.S. Dollar', tf, tfMs: C.TIMEFRAMES[tf], timeframes: this.chartTfs, visibleCandles: this.cfg.visibleCandles || 300, indicators: this.icfg, orderBook: this.obcfg, alerts: this.cfg.alerts || {}, refExchange: this.refExchange, icons: this.icons || {} },
+        meta: { symbol: this.cfg.symbolLabel || 'Bitcoin / U.S. Dollar', tf, tfMs: C.TIMEFRAMES[tf], timeframes: this.chartTfs, visibleCandles: this.cfg.visibleCandles || 300, indicators: this.icfg, orderBook: this.obcfg, alerts: this.cfg.alerts || {}, refExchange: this.refExchange, icons: this.icons || {}, sessions: this.sessions },
         analysis: this.analysisMessage(tf),
         scanner: this.scanner, pct: this.pct,
         book: this.bookProfile(), orders: this.feed,
