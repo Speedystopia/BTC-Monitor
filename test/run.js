@@ -80,6 +80,14 @@ test('condition flips only after confirmation bars', () => {
   const cond = A.trackCondition(candles, ema, new Array(10).fill(50), Object.assign({}, A.DEFAULTS, { conditionConfirmBars: 2 }));
   assert.strictEqual(cond.state, 'BEARISH'); assert.strictEqual(cond.idx, 6);
 });
+test('72H change falls back to 1h candles when the 5m series does not reach back 72h', () => {
+  const now = 1000 * C.HOUR;
+  const flat = (tfMs, n) => ({ candles: Array.from({ length: n }, (_, i) => ({ t: now - (n - i) * tfMs, c: 100 })) });
+  const series = { '5m': flat(5 * C.MIN, 850), '1h': flat(C.HOUR, 200), '1d': flat(C.DAY, 40) }; // 850 x 5m = 70.8h
+  const pct = A.pctChanges(series, 110, now);
+  assert.ok(near(pct.find(p => p.label === '72H').value, 10));
+  assert.ok(near(pct.find(p => p.label === '48H').value, 10));
+});
 test('scanner returns 13 timeframes', () => {
   const series = {}; for (const tf of C.SCANNER_ORDER) { series[tf] = { candles: Array.from({ length: 60 }, (_, i) => ({ c: 100 + i })) }; }
   const sc = A.scanTrends(series, A.DEFAULTS);
@@ -167,6 +175,24 @@ test('engine builds index, candles, feed and liquidations from events', () => {
   assert.ok(msgs.some(m => m.type === 'tick') && msgs.some(m => m.type === 'liq'));
   const snap = engine.snapshot();
   assert.strictEqual(snap.type, 'snapshot'); assert.ok(snap.analysis.candles.length >= 1);
+});
+test('books with a subscribed depth are truncated to their best levels', () => {
+  const engine = new Engine({}); let now = 1789400000000; engine.now = () => now;
+  engine.registerExchange('kraken', { bookDepth: 2 });
+  engine.onTrade('kraken', { price: 100.6, qty: 1, side: 'buy' });
+  engine.onBookSnapshot('kraken', [['100', '1'], ['99', '1']], [['101', '1'], ['102', '1']]);
+  engine.onBookDelta('kraken', [['100.5', '1']], [['100.8', '1']]); // pushes 99 / 102 out of the depth, no delete sent
+  now += 1500; engine.tick();
+  assert.deepStrictEqual([...engine.books.kraken.bids.keys()].sort((a, b) => b - a), [100.5, 100]);
+  assert.deepStrictEqual([...engine.books.kraken.asks.keys()].sort((a, b) => a - b), [100.8, 101]);
+});
+test('tick messages of every timeframe share the per-tick values', () => {
+  const engine = new Engine({ chartTimeframes: ['1m', '5m', '1h'] }); let now = 1789400000000; engine.now = () => now;
+  const ticks = []; engine.on('message', (m) => { if (m.type === 'tick') ticks.push(m); });
+  engine.onTrade('a', { price: 100, qty: 2, side: 'buy' }); engine.onTrade('a', { price: 100, qty: 1, side: 'sell' });
+  engine.tick();
+  assert.deepStrictEqual(ticks.map(t => t.tf), ['1m', '5m', '1h']);
+  for (const t of ticks) assert.deepStrictEqual(t.vol1m, { total: 3, buy: 2, sell: 1, usd: 300 });
 });
 test('liquidations: rolling 24h window, store round trip, legacy store format', () => {
   const t0 = Date.UTC(2026, 8, 20, 12, 0, 0);

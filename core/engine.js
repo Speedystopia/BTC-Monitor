@@ -29,12 +29,15 @@
 
   /** One exchange's local order book. */
   class LocalBook {
-    constructor(id) { this.id = id; this.bids = new Map(); this.asks = new Map(); this.updatedAt = 0; this.ready = false; }
+    constructor(id) { this.id = id; this.bids = new Map(); this.asks = new Map(); this.updatedAt = 0; this.ready = false; this.depth = 0; }
     clear() { this.bids.clear(); this.asks.clear(); this.ready = false; }
     bestBid() { let b = 0; for (const p of this.bids.keys()) if (p > b) b = p; return b; }
     bestAsk() { let a = Infinity; for (const p of this.asks.keys()) if (p < a) a = p; return a === Infinity ? 0 : a; }
     size() { return this.bids.size + this.asks.size; }
+    /** Keep the `depth` best levels of each side (for feeds that do not delete levels pushed out of their depth). */
+    truncate() { if (this.depth) { trimSide(this.bids, this.depth, (a, b) => b - a); trimSide(this.asks, this.depth, (a, b) => a - b); } }
   }
+  function trimSide(m, depth, better) { if (m.size <= depth) return; const keys = Array.from(m.keys()).sort(better); for (let i = depth; i < keys.length; i++) m.delete(keys[i]); }
 
   class Engine extends Emitter {
     constructor(config) {
@@ -51,6 +54,7 @@
       // candle series for all timeframes
       this.series = {};
       for (const tf of Object.keys(C.TIMEFRAMES)) this.series[tf] = new C.CandleSeries(tf, 1500);
+      this._seriesList = Object.values(this.series); // hot path (every trade)
       this.chartCandles = this.cfg.chartCandles || 900;   // candles sent to a chart page
       // per-exchange trade state for the index price
       this.ex = {}; // id -> { last, ts, vol, volTs, quote, status, name }
@@ -89,6 +93,7 @@
       if (!this.ex[id]) this.ex[id] = { id, name: this.exchangeName(id), last: 0, ts: 0, vol: 0, volTs: 0, quote: USDT_QUOTED[id] ? 'USDT' : 'USD', status: 'connecting', trades: 0 };
       if (opts && opts.quote) this.ex[id].quote = opts.quote;
       if (!this.books[id]) this.books[id] = new LocalBook(id);
+      if (opts && opts.bookDepth) this.books[id].depth = opts.bookDepth;
       return this.ex[id];
     }
     setStatus(id, status, detail) {
@@ -137,7 +142,7 @@
       this.recentTrades.push({ ts: now, qty: tr.qty, side: tr.side, usd });
       // volume into all series (roll first so the bucket is current)
       const idx = this.index || price;
-      for (const tf of Object.keys(this.series)) { const s = this.series[tf]; if (s.candles.length) { s.roll(now, idx); s.addVolume(now, tr.qty, tr.side); } }
+      for (const s of this._seriesList) if (s.candles.length) { s.roll(now, idx); s.addVolume(now, tr.qty, tr.side); }
       if (usd >= this.obcfg.largeTradeUsd) this.addTradeRow({ kind: 'trade', ex: id, side: tr.side, price, usd, qty: tr.qty, ts: now });
     }
 
@@ -315,15 +320,20 @@
       const closedTfs = new Set();
       for (const tf of Object.keys(this.series)) {
         const closed = this.series[tf].updatePrice(now, idx);
-        if (closed.length && this.tfState[tf]) closedTfs.add(tf);
+        if (closed.length && this.hasTf(tf)) closedTfs.add(tf);
       }
       // prune rolling buffers
       const cut = now - 60000;
       if (this.recentTrades.length && this.recentTrades[0].ts < cut) { let i = 0; while (i < this.recentTrades.length && this.recentTrades[i].ts < cut) i++; this.recentTrades.splice(0, i); }
-      if (now - this._lastFeedAt >= 1000) { this._lastFeedAt = now; this.refreshFeed(now); }
+      if (now - this._lastFeedAt >= 1000) {
+        this._lastFeedAt = now;
+        for (const id of Object.keys(this.books)) this.books[id].truncate();
+        this.refreshFeed(now);
+      }
 
       this.recompute(now, closedTfs.size > 0);
-      for (const tf of this.chartTfs) this._emitTick(tf, now, closedTfs.has(tf));
+      const shared = this._tickShared(now);
+      for (const tf of this.chartTfs) this._emitTick(tf, now, closedTfs.has(tf), shared);
       for (const tf of closedTfs) this.emit('message', this.analysisMessage(tf));
       if (now - this._lastBookAt >= 1000) { this._lastBookAt = now; const prof = this.bookProfile(); if (prof) this.emit('message', Object.assign({ type: 'book' }, prof)); }
       if (this._ordersDirty && now - this._lastOrdersAt >= 400) { this._ordersDirty = false; this._lastOrdersAt = now; this.emit('message', { type: 'orders', rows: this.feed }); }
@@ -393,21 +403,27 @@
 
     // ------------------------------------------------------------------ messages
     vol1m() { let total = 0, buy = 0, sell = 0, usd = 0; for (const t of this.recentTrades) { total += t.qty; usd += t.usd; if (t.side === 'buy') buy += t.qty; else sell += t.qty; } return { total, buy, sell, usd }; }
-    _emitTick(tf, now, closed) {
+    /** Tick fields shared by every timeframe, computed once per tick (vol1m scans a minute of trades). */
+    _tickShared(now) {
+      const ch = I.pctChange(this.series['5m'].candles, C.DAY, now, this.index);
+      const ref = this.ex[this.refExchange];
+      return {
+        ref: ref && now - ref.ts < 120000 ? ref.last : null,
+        vol1m: this.vol1m(),
+        change24h: ch == null ? null : { pct: ch, abs: this.index - this.index / (1 + ch / 100) },
+        sources: this.indexSources || 0,
+      };
+    }
+    _emitTick(tf, now, closed, shared) {
       const s = this.series[tf]; const c = s.last; if (!c) return;
       const a = this.tfState[tf].analysis; const n = a ? a.ema.length - 1 : -1;
-      const s5 = this.series['5m'].candles;
-      const ch = I.pctChange(s5, C.DAY, now, this.index);
-      const ref = this.ex[this.refExchange];
       const tick = {
-        type: 'tick', tf, t: now, p: this.index, ref: ref && now - ref.ts < 120000 ? ref.last : null,
+        type: 'tick', tf, t: now, p: this.index, ref: shared.ref,
         candle: { t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v, bv: c.bv },
         closeIn: c.t + s.tfMs - now, closed,
         ema: a ? a.ema[n] : null, rsi: a ? a.rsi[n] : null, mw: a ? a.mw[n] : null, sig: a ? a.sig[n] : null,
         pending: a ? a.pending : null,
-        vol1m: this.vol1m(),
-        change24h: ch == null ? null : { pct: ch, abs: this.index - this.index / (1 + ch / 100) },
-        sources: this.indexSources || 0,
+        vol1m: shared.vol1m, change24h: shared.change24h, sources: shared.sources,
       };
       this.emit('message', tick);
     }
