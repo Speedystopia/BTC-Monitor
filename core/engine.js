@@ -39,7 +39,10 @@ module.exports = (function (I, C, A, H) {
 
   /** One exchange's local order book. */
   class LocalBook {
-    constructor(id) { this.id = id; this.bids = new Map(); this.asks = new Map(); this.updatedAt = 0; this.ready = false; this.depth = 0; }
+    constructor(id) {
+      this.id = id; this.bids = new Map(); this.asks = new Map(); this.updatedAt = 0; this.ready = false; this.depth = 0;
+      this.resync = null; this.resyncs = 0; this.resyncAt = -Infinity; this.crossedSince = null; // integrity: reload hook of the adapter, reloads so far
+    }
     size() { return this.bids.size + this.asks.size; }
     /** Keep the `depth` best levels of each side (for feeds that do not delete levels pushed out of their depth). */
     truncate() { if (this.depth) { trimSide(this.bids, this.depth, (a, b) => b - a); trimSide(this.asks, this.depth, (a, b) => a - b); } }
@@ -109,6 +112,7 @@ module.exports = (function (I, C, A, H) {
       if (opts && opts.quote) this.ex[id].quote = opts.quote;
       if (!this.books[id]) this.books[id] = new LocalBook(id);
       if (opts && opts.bookDepth) this.books[id].depth = opts.bookDepth;
+      if (opts && opts.resyncBook) this.books[id].resync = opts.resyncBook; // (reason) => reload the book
       return this.ex[id];
     }
     setStatus(id, status, detail) {
@@ -195,6 +199,30 @@ module.exports = (function (I, C, A, H) {
       for (const [p, q] of bids) { const pp = +p, qq = +q; if (qq > 0) book.bids.set(pp, qq); else book.bids.delete(pp); }
       for (const [p, q] of asks) { const pp = +p, qq = +q; if (qq > 0) book.asks.set(pp, qq); else book.asks.delete(pp); }
       book.updatedAt = this.now();
+    }
+    /** The adapter found its book wrong (sequence gap, checksum): left out of every aggregate until the next snapshot. */
+    invalidateBook(id) {
+      const book = this.books[id]; if (!book) return;
+      book.ready = false; book.bids = new Map(); book.asks = new Map(); book.crossedSince = null; book.resyncs++;
+      this._lastStatusAt = 0;
+    }
+    /**
+     * Watchdog, every second: a best bid at or above the best ask for 3 s means missed updates (feeds without
+     * checksums: Coinbase, Bybit...). The adapter reloads the book, at most every 30 s.
+     */
+    checkBooks(now) {
+      for (const id of Object.keys(this.books)) {
+        const book = this.books[id];
+        if (!book.ready || !book.bids.size || !book.asks.size) { book.crossedSince = null; continue; }
+        let bid = -Infinity, ask = Infinity;
+        for (const p of book.bids.keys()) if (p > bid) bid = p;
+        for (const p of book.asks.keys()) if (p < ask) ask = p;
+        if (bid < ask) { book.crossedSince = null; continue; }
+        if (book.crossedSince == null) { book.crossedSince = now; continue; }
+        if (now - book.crossedSince < 3000 || !book.resync || now - book.resyncAt < 30000) continue;
+        book.resyncAt = now;
+        book.resync(`crossed book (best bid ${bid} >= best ask ${ask})`);
+      }
     }
     /**
      * Large-order feed: the biggest resting levels (>= largeOrderUsd, within
@@ -350,6 +378,7 @@ module.exports = (function (I, C, A, H) {
       if (now - this._lastFeedAt >= 1000) {
         this._lastFeedAt = now;
         for (const id of Object.keys(this.books)) this.books[id].truncate();
+        this.checkBooks(now);
         this.refreshFeed(now);
       }
 
@@ -374,7 +403,7 @@ module.exports = (function (I, C, A, H) {
     statusState() {
       const now = this.now();
       let total = 0; const list = [];
-      for (const id of Object.keys(this.ex)) { const e = this.ex[id]; const v = e.vol * Math.exp(-(now - e.volTs) / 900000); total += v; list.push({ id, name: e.name, status: e.status, detail: e.detail || '', lastTradeAgo: e.ts ? now - e.ts : null, vol5m: v, last: e.last, trades: e.trades, book: this.books[id] ? this.books[id].size() : 0 }); }
+      for (const id of Object.keys(this.ex)) { const e = this.ex[id]; const v = e.vol * Math.exp(-(now - e.volTs) / 900000); total += v; list.push({ id, name: e.name, status: e.status, detail: e.detail || '', lastTradeAgo: e.ts ? now - e.ts : null, vol5m: v, last: e.last, trades: e.trades, book: this.books[id] ? this.books[id].size() : 0, bookResyncs: this.books[id] ? this.books[id].resyncs : 0 }); }
       for (const l of list) l.share = total > 0 ? l.vol5m / total : 0;
       return { exchanges: list, indexSources: this.indexSources || 0, uptime: now - this.startedAt, usdtRate: this.usdtRate, clockOffset: this.clockOffset, icons: this.icons || {} };
     }

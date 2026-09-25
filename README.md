@@ -172,6 +172,7 @@ btc-monitor/
 │   ├── clock.js              écart entre l'horloge de l'ordinateur et celle des exchanges
 │   └── feeds/                un adaptateur par exchange (trades, carnet, liquidations, historique)
 │       ├── index.js    registre des adaptateurs (ajouter un exchange ici)
+│       ├── integrity.js  contrôle des carnets (CRC32 OKX / Kraken, séquences)
 │       ├── binance.js  coinbase.js  kraken.js  bybit.js  okx.js  bitstamp.js
 ├── core/                     moteur (côté serveur)
 │   ├── indicators.js         SMA, EMA, RSI, ATR, Momentum Wave, tendance, variations
@@ -213,6 +214,15 @@ Flux : exchanges → adaptateurs (événements normalisés) → `Engine` → mes
   `icons.sources` pour le remplacer.
 * **Pas de son** : les navigateurs exigent un clic sur la page avant de jouer un son —
   cliquer sur *ENABLE AUDIO ALERTS* (dans OBS, cocher *Contrôler l'audio via OBS*).
+* **Carnets d'ordres faussés** : une mise à jour perdue fausserait un carnet pour de bon (murs fantômes
+  dans la heatmap et le flux des gros ordres). Chaque carnet est contrôlé : enchaînement des numéros de
+  séquence (Binance, OKX, ordre croissant chez Bybit), somme de contrôle CRC32 des meilleurs niveaux
+  envoyée par l'exchange (OKX : 25 niveaux, Kraken : 10), et pour tous un garde-fou : un carnet dont le
+  meilleur achat reste au-dessus de la meilleure vente pendant 3 s est rechargé (au plus toutes les 30 s).
+  Un carnet rechargé est écarté des agrégats jusqu'au nouvel instantané ; la console l'indique
+  (`order book checksum mismatch: reloading`) et l'infobulle de l'exchange compte les rechargements.
+  Si un exchange change de format, le contrôle concerné se désactive seul (une ligne dans la console)
+  au lieu de recharger le carnet en boucle.
 * **Horloge de l'ordinateur décalée** : au démarrage puis toutes les 10 minutes, le serveur demande
   l'heure à Binance, Coinbase, Bybit et OKX (comme NTP : on garde l'aller-retour le plus rapide de
   chacun, puis la médiane). Les bougies, les comptes à rebours et les âges utilisent cette heure ; la

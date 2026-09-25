@@ -4,6 +4,7 @@
  *  orders, REST candle history.
  * ========================================================================== */
 const { ReconnectingWS, getJson } = require('../net');
+const { OkxBook } = require('./integrity');
 
 const WS_URL = 'wss://ws.okx.com:8443/ws/v5/public';
 const REST = 'https://www.okx.com';
@@ -23,7 +24,7 @@ function parse(msg) {
   if (ch === 'books' || ch === 'books5') {
     const d = m.data[0];
     const strip = (arr) => (arr || []).map(x => [x[0], x[1]]);
-    return { kind: m.action === 'snapshot' || ch === 'books5' ? 'snapshot' : 'delta', symbol: m.arg.instId, bids: strip(d.bids), asks: strip(d.asks) };
+    return { kind: m.action === 'snapshot' || ch === 'books5' ? 'snapshot' : 'delta', symbol: m.arg.instId, bids: strip(d.bids), asks: strip(d.asks), seqId: d.seqId, prevSeqId: d.prevSeqId, checksum: d.checksum };
   }
   if (ch === 'liquidation-orders') {
     const liqs = [];
@@ -47,8 +48,11 @@ function parse(msg) {
 function start(ctx) {
   const { engine, symbol, log } = ctx;
   const id = 'okx';
-  engine.registerExchange(id, { quote: symbol.endsWith('USDT') ? 'USDT' : 'USD' });
   let bookReady = false;
+  const check = new OkxBook(log); // exchange strings + sequence chain + checksum of the 25 best levels
+  const reload = (why) => { log(`order book ${why}: reloading`); bookReady = false; engine.invalidateBook(id); conn.reconnect(); };
+  // books: 400 levels; a level pushed out of them is not always deleted -> truncated like Kraken's
+  engine.registerExchange(id, { quote: symbol.endsWith('USDT') ? 'USDT' : 'USD', bookDepth: 400, resyncBook: reload });
   const conn = new ReconnectingWS({
     name: id, url: WS_URL, staleMs: 45000, pingEvery: 25000, pingPayload: 'ping',
     onStatus: (s, d) => { engine.setStatus(id, s === 'connected' ? 'ok' : s, d); if (s !== 'connected') bookReady = false; },
@@ -56,9 +60,11 @@ function start(ctx) {
     onMessage: (raw) => {
       const p = parse(raw); if (!p) return;
       if (p.kind === 'trades') { for (const t of p.trades) if (t.symbol === symbol) engine.onTrade(id, t); }
-      else if (p.kind === 'snapshot' && p.symbol === symbol) { engine.onBookSnapshot(id, p.bids, p.asks); bookReady = true; }
-      else if (p.kind === 'delta' && p.symbol === symbol) { if (bookReady) engine.onBookDelta(id, p.bids, p.asks); }
-      else if (p.kind === 'error') log('feed error: ' + p.message);
+      else if (p.kind === 'snapshot' && p.symbol === symbol) { check.apply(p, true, Date.now()); engine.onBookSnapshot(id, p.bids, p.asks); bookReady = true; }
+      else if (p.kind === 'delta' && p.symbol === symbol && bookReady) {
+        const why = check.apply(p, false, Date.now());
+        if (why) reload(why); else engine.onBookDelta(id, p.bids, p.asks);
+      } else if (p.kind === 'error') log('feed error: ' + p.message);
     },
   });
   return { stop: () => conn.close() };

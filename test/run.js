@@ -231,6 +231,76 @@ test('calendar normalisation + flags', () => {
   assert.strictEqual(flagEmoji('CNY'), '🇨🇳'); assert.strictEqual(flagEmoji('All'), '🌐'); assert.strictEqual(flagEmoji('FR'), '🇫🇷');
 });
 
+group('order-book integrity');
+const IG = require('../server/feeds/integrity');
+test('crc32 and the OKX / Kraken checksum strings', () => {
+  assert.strictEqual(IG.crc32('123456789'), 0xCBF43926);
+  // OKX documentation example: "3366.1:7:3366.8:9:3366:6:3368:8", as a signed int
+  assert.strictEqual(IG.okxChecksum([[3366.1, ['3366.1', '7']], [3366, ['3366', '6']]], [[3366.8, ['3366.8', '9']], [3368, ['3368', '8']]]), -1881014294);
+  // Kraken: asks then bids, "50000.5" -> "500005", "0.00500000" -> "500000" (no '.', no leading zeros)
+  assert.strictEqual(IG.krakenChecksum([[49999.9, 0.005], [49999, 1]], [[50000.5, 0.1], [50001, 2.5]], 1, 8), 3768156777);
+  const m = new Map([[5, 'a'], [9, 'b'], [1, 'c'], [7, 'd']]);
+  assert.deepStrictEqual(IG.topLevels(m, 2, true).map(x => x[0]), [9, 7]); assert.deepStrictEqual(IG.topLevels(m, 3, false).map(x => x[0]), [1, 5, 7]);
+});
+test('OKX book: chained sequence, checksum, self-check on the snapshot', () => {
+  const logs = [], ok = new IG.OkxBook((m) => logs.push(m));
+  const bids = [['3366.1', '7'], ['3366', '6']], asks = [['3366.8', '9'], ['3368', '8']];
+  assert.strictEqual(ok.apply({ bids, asks, seqId: 10, prevSeqId: -1, checksum: -1881014294 }, true, 0), null);
+  assert.ok(ok.sum.enabled && !logs.length);
+  const sum = (b, a) => IG.okxChecksum(b, a);
+  // level 3366 removed, 3367 added: expected checksum of the resulting book
+  const next = sum([[3366.1, ['3366.1', '7']], [3365, ['3365', '1.50']]], [[3366.8, ['3366.8', '9']], [3368, ['3368', '8']]]);
+  assert.strictEqual(ok.apply({ bids: [['3366', '0'], ['3365', '1.50']], asks: [], seqId: 11, prevSeqId: 10, checksum: next }, false, 5000), null);
+  assert.strictEqual(ok.apply({ bids: [], asks: [], seqId: 11, prevSeqId: 11, checksum: next }, false, 5500), null); // keep-alive, checksum not due
+  assert.strictEqual(ok.apply({ bids: [], asks: [], seqId: 12, prevSeqId: 11, checksum: 123 }, false, 7000), 'checksum mismatch');
+  assert.ok(/sequence gap \(12 -> 14\)/.test(ok.apply({ bids: [], asks: [], seqId: 15, prevSeqId: 14 }, false, 7100)));
+  // a snapshot whose checksum cannot be reproduced switches the checksum off (no reload loop)
+  const off = new IG.OkxBook((m) => logs.push(m));
+  off.apply({ bids, asks, seqId: 1, prevSeqId: -1, checksum: 42 }, true, 0);
+  assert.ok(!off.sum.enabled && /check disabled/.test(logs[0]));
+  assert.strictEqual(off.apply({ bids: [], asks: [], seqId: 2, prevSeqId: 1, checksum: 7 }, false, 9000), null);
+  // five failures in ten minutes switch a check off
+  const g = new IG.Guard('x', (m) => logs.push(m));
+  for (let i = 0; i < 4; i++) g.fail(i * 1000); assert.ok(g.enabled); g.fail(5000); assert.ok(!g.enabled);
+});
+test('Kraken checksum: precisions found on the snapshot, mismatch after an update', () => {
+  const logs = [], k = new IG.KrakenCheck((m) => logs.push(m));
+  const book = { bids: new Map([[49999.9, 0.005], [49999, 1]]), asks: new Map([[50000.5, 0.1], [50001, 2.5]]) };
+  k.snapshot(book, 3768156777); assert.deepStrictEqual([k.pp, k.qp, k.sum.enabled], [1, 8, true]);
+  const k2 = new IG.KrakenCheck((m) => logs.push(m));
+  k2.snapshot(book, IG.krakenChecksum([[49999.9, 0.005], [49999, 1]], [[50000.5, 0.1], [50001, 2.5]], 2, 5)); assert.deepStrictEqual([k2.pp, k2.qp], [2, 5]);
+  assert.strictEqual(k.update(book, 3768156777, 1000), null);
+  book.bids.set(49998, 3); // a new level among the 10 best: the old checksum no longer matches
+  assert.strictEqual(k.update(book, 3768156777, 1500), null); // not due yet (once a second)
+  assert.strictEqual(k.update(book, 3768156777, 2000), 'checksum mismatch');
+  const k3 = new IG.KrakenCheck((m) => logs.push(m)); k3.snapshot(book, 1); assert.ok(!k3.sum.enabled && /Kraken book checksum check disabled/.test(logs[0]));
+});
+test('parsers carry the sequence and checksum fields', () => {
+  const o = feeds.okx.parse({ arg: { channel: 'books', instId: 'BTC-USDT' }, action: 'update', data: [{ bids: [], asks: [['78001.0', '2', '0', '1']], seqId: 8, prevSeqId: 7, checksum: -5 }] });
+  assert.deepStrictEqual([o.seqId, o.prevSeqId, o.checksum, o.asks[0][0]], [8, 7, -5, '78001.0']);
+  const k = feeds.kraken.parse({ channel: 'book', type: 'update', data: [{ symbol: 'BTC/USD', bids: [], asks: [], checksum: 99 }] });
+  assert.strictEqual(k.checksum, 99);
+});
+test('engine: a book crossed for 3 s is reloaded by its adapter, at most every 30 s', () => {
+  const engine = new Engine({}); const calls = [];
+  engine.registerExchange('x', { resyncBook: (why) => { calls.push(why); engine.invalidateBook('x'); } });
+  engine.registerExchange('y', {});
+  engine.onBookSnapshot('x', [['101', '1'], ['99', '1']], [['100', '1'], ['102', '1']]); // stale ask 100 under the bid 101
+  engine.onBookSnapshot('y', [['101', '1']], [['100', '1']]); // crossed but no reload hook: left alone
+  engine.checkBooks(0); engine.checkBooks(1000); engine.checkBooks(2500); assert.strictEqual(calls.length, 0);
+  engine.checkBooks(3000);
+  assert.strictEqual(calls.length, 1); assert.ok(/crossed book \(best bid 101 >= best ask 100\)/.test(calls[0]), calls[0]);
+  assert.strictEqual(engine.books.x.ready, false); assert.strictEqual(engine.books.x.size(), 0);
+  assert.strictEqual(engine.statusState().exchanges.find(e => e.id === 'x').bookResyncs, 1);
+  engine.onBookDelta('x', [['50', '1']], []); assert.strictEqual(engine.books.x.size(), 0); // deltas wait for the next snapshot
+  engine.onBookSnapshot('x', [['101', '1']], [['100', '1']]); // still crossed after the reload
+  for (const t of [4000, 5000, 8000, 20000]) engine.checkBooks(t);
+  assert.strictEqual(calls.length, 1); // cooldown
+  engine.checkBooks(33000); assert.strictEqual(calls.length, 2);
+  engine.onBookSnapshot('x', [['99', '1']], [['100', '1']]); engine.checkBooks(70000); engine.checkBooks(80000);
+  assert.strictEqual(calls.length, 2); assert.strictEqual(engine.books.x.crossedSince, null);
+});
+
 group('engine');
 test('engine builds index, candles, feed and liquidations from events', () => {
   const engine = new Engine({ chartTimeframe: '5m', orderBook: { largeOrderUsd: 100000, largeTradeUsd: 50000, minRestMs: 0 } });

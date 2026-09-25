@@ -37,7 +37,7 @@ function start(ctx) {
   const { engine, symbol, log } = ctx;
   const id = 'binance';
   const sym = symbol.toLowerCase();
-  engine.registerExchange(id, { quote: symbol.endsWith('USDT') ? 'USDT' : 'USD' });
+  engine.registerExchange(id, { quote: symbol.endsWith('USDT') ? 'USDT' : 'USD', resyncBook: (why) => { log(`order book ${why}: reloading`); engine.invalidateBook(id); lastU = null; resync(); } });
   const tickerSymbols = (ctx.assets || []).map(a => a.symbol.toLowerCase());
   const streams = [`${sym}@trade`, `${sym}@depth@100ms`].concat(tickerSymbols.map(s => `${s}@ticker`));
 
@@ -76,7 +76,7 @@ function start(ctx) {
       if (p.kind === 'trade' && p.symbol === symbol) engine.onTrade(id, p.trade);
       else if (p.kind === 'depth' && p.symbol === symbol) {
         if (!synced) { buffer.push(p); if (buffer.length > 5000) buffer.shift(); return; }
-        if (lastU != null && p.U !== lastU + 1) { log(`depth sequence gap (${lastU} -> ${p.U}), resyncing`); return resync(); }
+        if (lastU != null && p.U !== lastU + 1) { log(`depth sequence gap (${lastU} -> ${p.U}), resyncing`); engine.invalidateBook(id); return resync(); }
         engine.onBookDelta(id, p.bids, p.asks); lastU = p.u;
       } else if (p.kind === 'ticker') {
         const a = (ctx.assets || []).find(x => x.symbol.toUpperCase() === p.symbol);

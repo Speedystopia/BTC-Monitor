@@ -34,7 +34,8 @@ function parse(msg) {
 function start(ctx) {
   const { engine, symbol, log } = ctx;
   const id = 'coinbase';
-  engine.registerExchange(id, { quote: 'USD' });
+  const reload = (why) => { log(`order book ${why}: reloading`); engine.invalidateBook(id); conn.reconnect(); };
+  engine.registerExchange(id, { quote: 'USD', resyncBook: reload }); // level2_batch: no sequence nor checksum, the engine watches for a crossed book
   const assetIds = (ctx.assets || []).map(a => a.symbol);
   const conn = new ReconnectingWS({
     name: id, url: WS_URL, staleMs: 45000,
