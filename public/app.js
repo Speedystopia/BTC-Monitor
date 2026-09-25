@@ -184,7 +184,7 @@ window.BTCM_APP = (function () {
     $('sources').innerHTML = s.exchanges.map(e => {
       const cls = e.status === 'ok' && e.lastTradeAgo != null && e.lastTradeAgo < 60000 ? 'ok' : (e.status === 'ok' ? 'warn' : 'bad');
       const share = e.share ? ` ${(e.share * 100).toFixed(0)}%` : '';
-      return `<span title="${e.status} ${U.escapeHtml(e.detail || '')} · last trade ${U.fmtAge(e.lastTradeAgo)} ago · book ${e.book} levels">${iconImg(e.id, 'srcic', e.name)}<i class="${cls}"></i>${U.escapeHtml(e.name)}${share}</span>`;
+      return `<span title="${e.status} ${U.escapeHtml(e.detail || '')} · last trade ${U.fmtAge(e.lastTradeAgo)} ago · book ${e.book} levels">${iconImg(e.id, 'srcic', e.name)}<i class="${cls}"></i><b class="nm">${U.escapeHtml(e.name)}</b>${share}</span>`;
     }).join('');
     renderMeta();
   }

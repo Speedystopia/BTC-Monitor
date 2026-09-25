@@ -130,6 +130,7 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 .statusline .src { display: flex; gap: 8px; }
 .statusline .src span { display: inline-flex; align-items: center; gap: 4px; }
 .statusline .srcic { width: 14px; height: 14px; border-radius: 50%; object-fit: cover; }
+.statusline .src .nm { font-weight: inherit; }
 .liqrow { display: flex; align-items: center; gap: 10px; }
 .tfswitch { display: flex; gap: 2px; font-family: var(--font-cond); }
 .tfswitch a { color: #bbb; text-decoration: none; padding: 2px 6px; border-radius: 3px; border: 1px solid #2a2a2a; font-weight: 700; font-size: 12px; letter-spacing: .5px; line-height: 1; }
@@ -152,6 +153,8 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
   .bottombar { grid-template-columns: 60px 300px 100px minmax(0,1fr); }
   .pricebox .big { font-size: 30px; } .pricebox .traded { font-size: 18px; } .gauge { width: 280px; }
   .liqbar { font-size: 14px; gap: 8px; }
+  /* narrower screens: exchange names in the tooltip only, no last-liquidation detail (keeps both footer lines whole) */
+  .statusline .src .nm, .liqbar .last { display: none; }
 }
 @media (max-width: 1100px) {
   .assets { display: none; }
