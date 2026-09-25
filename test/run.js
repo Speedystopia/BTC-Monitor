@@ -271,6 +271,10 @@ test('OKX book: chained sequence, checksum, self-check on the snapshot', () => {
   off.apply({ bids, asks, seqId: 1, prevSeqId: -1, checksum: 42 }, true, 0);
   assert.ok(!off.sum.enabled && /check disabled/.test(logs[0]));
   assert.strictEqual(off.apply({ bids: [], asks: [], seqId: 2, prevSeqId: 1, checksum: 7 }, false, 9000), null);
+  // the book keeps its subscribed depth (the checksum only reads the 25 best levels)
+  const deep = new IG.OkxBook(() => {}, 3);
+  deep.apply({ bids: [['10', '1'], ['9', '1'], ['8', '1'], ['7', '1']], asks: [['11', '1']] }, true, 0);
+  deep.checksum(); assert.deepStrictEqual(Array.from(deep.bids.keys()).sort((a, b) => b - a), [10, 9, 8]);
   // five failures in ten minutes switch a check off
   const g = new IG.Guard('x', (m) => logs.push(m));
   for (let i = 0; i < 4; i++) g.fail(i * 1000); assert.ok(g.enabled); g.fail(5000); assert.ok(!g.enabled);

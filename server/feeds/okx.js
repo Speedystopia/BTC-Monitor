@@ -49,7 +49,7 @@ function start(ctx) {
   const { engine, symbol, log } = ctx;
   const id = 'okx';
   let bookReady = false;
-  const check = new OkxBook(log); // exchange strings + sequence chain + checksum of the 25 best levels
+  const check = new OkxBook(log, 400); // exchange strings + sequence chain + checksum of the 25 best levels
   const reload = (why) => { log(`order book ${why}: reloading`); bookReady = false; engine.invalidateBook(id); conn.reconnect(); };
   // books: 400 levels; a level pushed out of them is not always deleted -> truncated like Kraken's
   engine.registerExchange(id, { quote: symbol.endsWith('USDT') ? 'USDT' : 'USD', bookDepth: 400, resyncBook: reload });

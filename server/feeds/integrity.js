@@ -63,12 +63,20 @@ class Guard {
   due(now) { if (!this.enabled || now - this.checkedAt < 1000) return false; this.checkedAt = now; return true; }
 }
 
+/** Keep the `depth` best levels of a side (Map price -> value). */
+function trim(m, depth, desc) {
+  if (m.size <= depth) return;
+  const keys = Array.from(m.keys()).sort(desc ? (a, b) => b - a : (a, b) => a - b);
+  for (let i = depth; i < keys.length; i++) m.delete(keys[i]);
+}
+
 /**
  * OKX `books` channel: the exchange's strings of every level (the checksum uses them as sent),
  * the message chain and the checksum. apply() returns the reason to reload the book, or null.
+ * Like the engine's copy, the book keeps its subscribed depth: a level pushed out of it may not be deleted.
  */
 class OkxBook {
-  constructor(log) { this.bids = new Map(); this.asks = new Map(); this.seq = null; this.chain = new Guard('OKX book sequence', log); this.sum = new Guard('OKX book checksum', log); }
+  constructor(log, depth) { this.bids = new Map(); this.asks = new Map(); this.depth = depth || 400; this.seq = null; this.chain = new Guard('OKX book sequence', log); this.sum = new Guard('OKX book checksum', log); }
   apply(d, snapshot, now) {
     if (snapshot) { this.bids.clear(); this.asks.clear(); }
     else if (this.chain.enabled && this.seq != null && d.prevSeqId != null && +d.prevSeqId !== this.seq) {
@@ -87,7 +95,10 @@ class OkxBook {
     this.sum.fail(now);
     return 'checksum mismatch';
   }
-  checksum() { return okxChecksum(topLevels(this.bids, 25, true), topLevels(this.asks, 25, false)); }
+  checksum() {
+    trim(this.bids, this.depth, true); trim(this.asks, this.depth, false);
+    return okxChecksum(topLevels(this.bids, 25, true), topLevels(this.asks, 25, false));
+  }
 }
 
 /**
