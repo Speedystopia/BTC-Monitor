@@ -44,10 +44,13 @@ function loadConfig() {
   return mod.exports;
 }
 
+/** True when `full` lies inside `root` (a sibling folder sharing the name prefix does not; `root` may be a drive root). */
+function isInside(root, full) { const base = root.endsWith(path.sep) ? root : root + path.sep; return full.startsWith(base); }
+
 /** Read a static file: disk first (customisable), then the embedded copy. */
 function readStatic(relPath, cb) {
   const full = path.normalize(path.join(ROOT, relPath));
-  if (!full.startsWith(ROOT + path.sep)) return cb(new Error('forbidden'));
+  if (!isInside(ROOT, full)) return cb(new Error('forbidden'));
   fs.readFile(full, (err, data) => {
     if (!err) return cb(null, data);
     const emb = embedded(relPath.replace(/\\/g, '/').replace(/^\//, ''));
@@ -69,4 +72,4 @@ function openBrowser(url) {
   } catch (e) { /* ignore */ }
 }
 
-module.exports = { IS_EXE, ROOT, loadConfig, readStatic, openBrowser, embedded };
+module.exports = { IS_EXE, ROOT, loadConfig, readStatic, openBrowser, embedded, isInside };

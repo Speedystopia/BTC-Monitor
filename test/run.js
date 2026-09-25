@@ -268,6 +268,14 @@ test('reconnecting websocket reports a refused handshake with its HTTP status', 
   } finally { conn.close(); srv.close(); }
 });
 
+test('static files must stay inside the root folder (drive roots included)', () => {
+  const { isInside } = require('../server/paths');
+  const path = require('path'), sep = path.sep, root = sep + 'app';
+  assert.ok(isInside(root, root + sep + 'public' + sep + 'index.html'));
+  assert.ok(!isInside(root, root + '-evil' + sep + 'x.js'));
+  assert.ok(isInside(sep, sep + 'public' + sep + 'index.html')); // exe at the root of a drive / USB stick
+});
+
 group('server (integration)');
 const httpGet = (port, p) => new Promise((resolve, reject) => {
   const req = require('http').get({ host: '127.0.0.1', port, path: p, timeout: 5000 }, (res) => { let body = ''; res.on('data', d => { body += d; }); res.on('end', () => resolve({ status: res.statusCode, body })); });
