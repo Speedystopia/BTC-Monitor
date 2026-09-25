@@ -5,8 +5,9 @@
  *  application"). Can be run from Linux, macOS or Windows.
  *
  *    npm run build:exe           -> BTC-Monitor.exe at the project root
- *  (runs the tool with Node 20 via npx: the Windows Node 20 binary is ~15% smaller
- *   than Node 22, which keeps the archive small; any Node >= 20.12 works)
+ *  (runs the tool with Node 24 LTS via npx, supported with security fixes until
+ *   April 2028: the executable embeds the Node version that runs this tool;
+ *   any Node >= 20.12 works, but Node 20 is end-of-life since April 2026)
  *
  *  Steps: bundle the server with esbuild -> generate the SEA blob (with the
  *  public/ and config.js assets embedded) -> download the official

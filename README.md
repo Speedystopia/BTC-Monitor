@@ -26,8 +26,8 @@ tableau de bord s'ouvre tout seul dans le navigateur sur http://localhost:8787.
 * Les fichiers `public/` présents à côté de l'exécutable sont utilisés en priorité (l'interface reste modifiable).
 * Windows SmartScreen peut afficher « Windows a protégé votre ordinateur » car l'exécutable n'est pas signé :
   cliquer sur *Informations complémentaires* → *Exécuter quand même*. (`BTC-Monitor.exe` est le node.exe
-  officiel de nodejs.org dans lequel le programme est injecté, voir `tools/build-exe.js` ; `npm run build:exe`
-  le reconstruit.)
+  officiel de nodejs.org — Node 24 LTS, maintenu jusqu'en avril 2028 — dans lequel le programme est injecté,
+  voir `tools/build-exe.js` ; `npm run build:exe` le reconstruit.)
 * Options en ligne de commande : `BTC-Monitor.exe --port 9000`, `--host 0.0.0.0`, `--config autre-config.js`, `--no-open`.
 
 **macOS / Linux** : double-cliquer sur `start.command` (macOS) ou lancer `./start.sh` — Node.js ≥ 18 requis
@@ -72,7 +72,7 @@ Autres commandes :
 | `node server/index.js --port 9000` | changer le port |
 | `node server/index.js --config autre-config.js` | utiliser un autre fichier de réglages que `config.js` |
 | `npm test` | tests (indicateurs, moteur, parseurs des exchanges, serveur HTTP / WebSocket) — lancés aussi par la CI GitHub sur Node 18 à 24 |
-| `npm run build:exe` | reconstruit `BTC-Monitor.exe` (Windows x64) à partir des sources |
+| `npm run build:exe` | reconstruit `BTC-Monitor.exe` (Windows x64, Node 24 LTS) à partir des sources |
 
 ### Utilisation dans OBS
 
