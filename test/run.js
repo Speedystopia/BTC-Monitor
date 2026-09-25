@@ -6,17 +6,16 @@ const C = require('../core/candles');
 const A = require('../core/analysis');
 const { Engine } = require('../core/engine');
 const { Simulator } = require('../core/sim');
-const feeds = {
-  binance: require('../server/feeds/binance'), coinbase: require('../server/feeds/coinbase'), kraken: require('../server/feeds/kraken'),
-  bybit: require('../server/feeds/bybit'), okx: require('../server/feeds/okx'), bitstamp: require('../server/feeds/bitstamp'),
-};
+const feeds = require('../server/feeds');
 const { normalize, flagEmoji } = require('../server/calendar');
 
-let passed = 0, failed = 0;
-function test(name, fn) { try { fn(); passed++; console.log('  ok   ' + name); } catch (e) { failed++; console.log('  FAIL ' + name + '\n       ' + (e.stack || e).toString().split('\n').slice(0, 3).join('\n       ')); } }
+// tests are queued, then run one after another (a test may return a promise)
+const queue = [];
+const group = (name) => queue.push({ group: name });
+function test(name, fn) { queue.push({ name, fn }); }
 const near = (a, b, tol) => Math.abs(a - b) <= (tol || 1e-9);
 
-console.log('indicators');
+group('indicators');
 test('sma / ema basic values', () => {
   const s = I.sma([1, 2, 3, 4, 5], 3);
   assert.deepStrictEqual(s, [null, null, 2, 3, 4]);
@@ -42,7 +41,7 @@ test('pctChange finds the candle msAgo', () => {
   assert.ok(near(v, (200 / 189 - 1) * 100));
 });
 
-console.log('candles');
+group('candles');
 test('aggregate 1m -> 5m', () => {
   const m1 = Array.from({ length: 10 }, (_, i) => ({ t: i * 60000, o: i, h: i + 2, l: i - 1, c: i + 1, v: 1 }));
   const m5 = C.aggregate(m1, 300000);
@@ -66,7 +65,7 @@ test('CandleSeries rolls buckets and keeps volume', () => {
   assert.strictEqual(s.candles.length, 5); assert.strictEqual(s.candles[2].v, 0);
 });
 
-console.log('analysis');
+group('analysis');
 test('zones come from the closed-candle extremes', () => {
   const candles = Array.from({ length: 50 }, (_, i) => ({ t: i * 300000, o: 100, h: 101 + (i === 10 ? 20 : 0), l: 99 - (i === 30 ? 20 : 0), c: 100 }));
   candles[49].h = 500; // forming candle is ignored
@@ -87,7 +86,7 @@ test('scanner returns 13 timeframes', () => {
   assert.strictEqual(sc.length, 13); assert.ok(sc.every(s => s.bull === true && s.up === true));
 });
 
-console.log('exchange parsers');
+group('exchange parsers');
 test('binance trade / depth / ticker / forceOrder', () => {
   const t = feeds.binance.parse('{"stream":"btcusdt@trade","data":{"e":"trade","E":1,"s":"BTCUSDT","t":1,"p":"78860.00000000","q":"0.00009000","T":1789404776250,"m":true,"M":true}}');
   assert.deepStrictEqual(t, { kind: 'trade', symbol: 'BTCUSDT', trade: { price: 78860, qty: 0.00009, side: 'sell', ts: 1789404776250 } });
@@ -146,7 +145,7 @@ test('calendar normalisation + flags', () => {
   assert.strictEqual(flagEmoji('CNY'), '🇨🇳'); assert.strictEqual(flagEmoji('All'), '🌐'); assert.strictEqual(flagEmoji('FR'), '🇫🇷');
 });
 
-console.log('engine');
+group('engine');
 test('engine builds index, candles, feed and liquidations from events', () => {
   const engine = new Engine({ chartTimeframe: '5m', orderBook: { largeOrderUsd: 100000, largeTradeUsd: 50000, minRestMs: 0 } });
   let now = 1789400000000; engine.now = () => now;
@@ -187,5 +186,12 @@ test('simulator seeds all timeframes and runs the analysis', () => {
   assert.strictEqual(engine.scanner.length, 13); assert.strictEqual(engine.pct.length, 7);
 });
 
-console.log(`\n${passed} passed, ${failed} failed`);
-process.exit(failed ? 1 : 0);
+(async () => {
+  let passed = 0, failed = 0;
+  for (const q of queue) {
+    if (q.group) { console.log(q.group); continue; }
+    try { await q.fn(); passed++; console.log('  ok   ' + q.name); } catch (e) { failed++; console.log('  FAIL ' + q.name + '\n       ' + (e.stack || e).toString().split('\n').slice(0, 3).join('\n       ')); }
+  }
+  console.log(`\n${passed} passed, ${failed} failed`);
+  process.exit(failed ? 1 : 0);
+})();

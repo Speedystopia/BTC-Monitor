@@ -26,11 +26,7 @@ const { loadHistory } = require('./history');
 const { startCalendar } = require('./calendar');
 const { startAssets } = require('./assets');
 const { IconStore } = require('./icons');
-const C = require('../core/candles');
-const feeds = {
-  binance: require('./feeds/binance'), coinbase: require('./feeds/coinbase'), kraken: require('./feeds/kraken'),
-  bybit: require('./feeds/bybit'), okx: require('./feeds/okx'), bitstamp: require('./feeds/bitstamp'),
-};
+const feeds = require('./feeds');
 
 const args = process.argv.slice(1).filter(a => a !== process.execPath && !/[\\/]index\.js$/.test(a));
 const SIM = args.includes('--sim') || process.env.SIM === '1';
