@@ -52,25 +52,32 @@ engine.icons = icons.urls();
 icons.refresh().then((map) => { engine.icons = map; mainLog(`icons ready: ${Object.keys(map).join(', ') || 'none (fallback monograms)'}`); }).catch(() => {});
 const tfOf = (url) => { const tf = (url.searchParams.get('tf') || '').toLowerCase(); return engine.hasTf(tf) ? tf : engine.chartTf; };
 
-// ---------------------------------------------------------------- liquidation persistence
+// ---------------------------------------------------------------- persistence (liquidations, heatmap)
+/** Write a JSON store through a temp file + rename: a crash mid-write cannot corrupt it. */
+function writeStore(file, obj) {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file + '.tmp', JSON.stringify(obj));
+    fs.renameSync(file + '.tmp', file);
+  } catch (e) { mainLog(`${path.basename(file)} write failed: ${e.message}`); }
+}
+function readStore(file, what, apply) {
+  try { if (fs.existsSync(file)) apply(JSON.parse(fs.readFileSync(file, 'utf8'))); } catch (e) { mainLog(`could not read the ${what} store: ${e.message}`); }
+}
 const liqFile = path.resolve(ROOT, (config.liquidations && config.liquidations.storeFile) || 'data/liquidations.json');
-try {
-  if (fs.existsSync(liqFile)) { engine.loadLiquidations(JSON.parse(fs.readFileSync(liqFile, 'utf8'))); mainLog(`loaded ${engine.liqTotals().count} liquidation events from store`); }
-} catch (e) { mainLog('could not read liquidation store: ' + e.message); }
+readStore(liqFile, 'liquidation', (d) => { engine.loadLiquidations(d); mainLog(`loaded ${engine.liqTotals().count} liquidation events from store`); });
 let liqDirty = false;
 engine.on('liq_persist', () => { liqDirty = true; });
-/** Write the store through a temp file + rename: a crash mid-write cannot corrupt it. */
-function saveLiquidations() {
-  if (!liqDirty) return; liqDirty = false;
-  try {
-    fs.mkdirSync(path.dirname(liqFile), { recursive: true });
-    fs.writeFileSync(liqFile + '.tmp', JSON.stringify(engine.exportLiquidations()));
-    fs.renameSync(liqFile + '.tmp', liqFile);
-  } catch (e) { mainLog('liquidation store write failed: ' + e.message); }
-}
+function saveLiquidations() { if (!liqDirty) return; liqDirty = false; writeStore(liqFile, engine.exportLiquidations()); }
 setInterval(saveLiquidations, 20000);
+
+const heatFile = path.resolve(ROOT, (config.heatmap && config.heatmap.storeFile) || 'data/heatmap.json');
+if (engine.heatmap) readStore(heatFile, 'heatmap', (d) => mainLog(`loaded ${engine.heatmap.load(d, Date.now())} heatmap minutes from store`));
+let heatSaved = engine.heatmap ? engine.heatmap.version : 0;
+function saveHeatmap() { if (!engine.heatmap || engine.heatmap.version === heatSaved) return; heatSaved = engine.heatmap.version; writeStore(heatFile, engine.heatmap.export()); }
+setInterval(saveHeatmap, 5 * 60000);
 // flush on Ctrl+C, on kill, and when the console window is closed (SIGHUP on Windows)
-for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { saveLiquidations(); process.exit(0); });
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { saveLiquidations(); saveHeatmap(); process.exit(0); });
 
 // ---------------------------------------------------------------- HTTP static + API
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg' };

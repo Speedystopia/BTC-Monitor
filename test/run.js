@@ -117,6 +117,42 @@ test('engine sends the session settings, with defaults for older config files', 
   assert.deepStrictEqual([custom.maxTfMs, custom.list.length, custom.list[0].color], [15 * C.MIN, 1, '#9e9e9e']);
 });
 
+group('heatmap');
+test('heatmap averages the book samples per minute and per candle', () => {
+  const { LiquidityHeatmap, encode } = require('../core/heatmap');
+  const T = Date.UTC(2026, 8, 25, 12, 0, 0), hm = new LiquidityHeatmap({ step: 10, historyHours: 1 });
+  // minute 0: a $1M wall at 84000 every second; minute 1: the wall at half size; minute 2 (running): an ask at 84100
+  for (let s = 0; s < 60; s++) hm.sample(T + s * 1000, [[84000, 1e6, 0], [84010, 1000, 0]]);
+  for (let s = 0; s < 60; s++) hm.sample(T + 60000 + s * 1000, [[84000, 5e5, 0]]);
+  for (let s = 0; s < 10; s++) hm.sample(T + 120000 + s * 1000, [[84100, 0, 2e5]]);
+  assert.strictEqual(hm.cols.length, 2);
+  const val = (col, price) => { const i = Math.round(price / 10) - col.b0; return i >= 0 && i < col.q.length ? (col.q[i] / 255) ** 2 * col.s : 0; };
+  assert.ok(near(val(hm.cols[0], 84000), 1e6, 1)); assert.ok(near(val(hm.cols[0], 84010), 1000, 40)); // 8-bit square-root companding
+  const c5 = hm.column(T, 5 * C.MIN); // 3 minutes: 1M, 0.5M and the running minute without the wall
+  assert.ok(near(val(c5, 84000), 5e5, 1e3)); assert.ok(near(val(c5, 84100), 2e5 / 3, 1e3));
+  assert.strictEqual(hm.columns([T - 5 * C.MIN, T], 5 * C.MIN).length, 1); // the candle before the data is skipped
+  const wire = encode(c5); assert.ok(typeof wire.d === 'string' && wire.b0 === c5.b0);
+  // store round trip: same bucket size only, minutes older than the history dropped
+  const back = new LiquidityHeatmap({ step: 10, historyHours: 1 });
+  assert.strictEqual(back.load(JSON.parse(JSON.stringify(hm.export())), T + 3 * C.MIN), 2);
+  assert.deepStrictEqual(Array.from(back.cols[1].q), Array.from(hm.cols[1].q));
+  assert.strictEqual(new LiquidityHeatmap({ step: 25 }).load(hm.export(), T), 0);
+  assert.strictEqual(new LiquidityHeatmap({ step: 10, historyHours: 1 }).load(hm.export(), T + 2 * C.HOUR), 0);
+});
+test('engine samples the books into heatmap columns for every chart timeframe', () => {
+  const engine = new Engine({ chartTimeframes: ['1m', '5m'] }); let now = Date.UTC(2026, 8, 25, 12, 0, 0); engine.now = () => now;
+  const heat = []; engine.on('message', (m) => { if (m.type === 'heat') heat.push(m); });
+  engine.onTrade('a', { price: 84005, qty: 1, side: 'buy' });
+  engine.onBookSnapshot('a', [['84000', '20'], ['83990', '1']], [['84010', '1']]);
+  for (let i = 0; i < 70; i++) { now += 1000; engine.onTrade('a', { price: 84005, qty: 0.01, side: 'buy' }); engine.tick(); }
+  assert.ok(heat.some(m => m.tf === '1m') && heat.some(m => m.tf === '5m'));
+  const snap = engine.snapshot('1m');
+  assert.ok(snap.heat.cols.length >= 1 && snap.meta.heatmap.enabled);
+  const col = snap.heat.cols[0], q = Buffer.from(col.d, 'base64');
+  assert.strictEqual(q[Math.round(84000 / 10) - col.b0], 255); // the 20 BTC bid is the biggest level
+  assert.strictEqual(new Engine({ heatmap: { enabled: false } }).snapshot().heat, null);
+});
+
 group('exchange parsers');
 test('binance trade / depth / ticker / forceOrder', () => {
   const t = feeds.binance.parse('{"stream":"btcusdt@trade","data":{"e":"trade","E":1,"s":"BTCUSDT","t":1,"p":"78860.00000000","q":"0.00009000","T":1789404776250,"m":true,"M":true}}');
@@ -293,7 +329,7 @@ function offlineConfig() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'btcm-test-'));
   const file = path.join(dir, 'config.js');
   fs.writeFileSync(file, `module.exports = ${JSON.stringify({
-    exchanges: {}, liquidations: { storeFile: path.join(dir, 'liquidations.json') }, calendar: { forexFactory: false },
+    exchanges: {}, liquidations: { storeFile: path.join(dir, 'liquidations.json') }, heatmap: { storeFile: path.join(dir, 'heatmap.json') }, calendar: { forexFactory: false },
     assets: [], icons: { enabled: false }, proxy: '',
   })};`);
   return { dir, file };

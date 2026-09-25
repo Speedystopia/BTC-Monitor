@@ -11,6 +11,7 @@ window.BTCM_APP = (function () {
     tf: null, meta: null, candles: [], zones: null, markers: [], pending: null, condition: null, tfMs: 300000,
     tick: null, book: null, orders: [], liq: { totals: null, recent: [] }, assets: [], calendar: null, status: null, scanner: [], pct: [],
     icons: {}, connected: false, lastMsgAt: 0,
+    heat: { step: 10, cols: new Map(), version: 0 }, // liquidity heatmap: candle time -> { t, b0, s, q }
   };
   let chart, osc, dirty = true;
   const REF_LABELS = { coinbase: 'CB', binance: 'BN', kraken: 'KR', bybit: 'BB', okx: 'OKX', bitstamp: 'BS' };
@@ -44,12 +45,15 @@ window.BTCM_APP = (function () {
         chart.visible = osc.visible = Math.min(msg.meta.visibleCandles || 300, Math.max(40, state.candles.length)); chart.tfMs = msg.meta.tfMs;
         chart.refLabel = REF_LABELS[msg.meta.refExchange] || (msg.meta.refExchange || '').slice(0, 3).toUpperCase();
         chart.sessions = msg.meta.sessions || null;
+        state.heat = { step: msg.heat ? msg.heat.step : 10, cols: new Map(), version: 0 }; chart.heat = state.heat;
+        if (msg.heat) addHeat(msg.heat.cols);
         if (!viewReady) initView(msg.meta);
         renderMeta(); renderTfSwitcher(); renderScanner(); renderPct(); renderOrders(); renderLiq(); renderAssets(); renderCalendar(); renderStatus();
         document.title = `BTC ${U.tfShort(state.tf)} — Bitcoin Live Educational Pro Chart`;
         break;
       }
-      case 'analysis': if (msg.tf === state.tf) { applyAnalysis(msg); renderMeta(); } break;
+      case 'analysis': if (msg.tf === state.tf) { applyAnalysis(msg); renderMeta(); pruneHeat(); } break;
+      case 'heat': if (msg.tf === state.tf) addHeat(msg.cols); break;
       case 'tick': if (msg.tf === state.tf) applyTick(msg); break;
       case 'scanner': state.scanner = msg.scanner; renderScanner(); break;
       case 'pct': state.pct = msg.pct; renderPct(); break;
@@ -69,6 +73,16 @@ window.BTCM_APP = (function () {
     chart.setSeries(state.candles, state.zones, state.markers, state.pending, state.condition); chart.tfMs = state.tfMs; osc.candles = state.candles;
     dirty = true;
   }
+  /** Heatmap columns from the server: { t, b0, s, d (base64 bytes) }. */
+  function addHeat(cols) {
+    for (const c of cols || []) {
+      const bin = atob(c.d), q = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) q[i] = bin.charCodeAt(i);
+      state.heat.cols.set(c.t, { t: c.t, b0: c.b0, s: c.s, q });
+    }
+    state.heat.version++; dirty = true;
+  }
+  function pruneHeat() { const first = state.candles.length ? state.candles[0].t : 0; for (const t of state.heat.cols.keys()) if (t < first) state.heat.cols.delete(t); }
   function applyTick(t) {
     state.tick = t; chart.tick = t;
     const c = state.candles; const last = c[c.length - 1];
@@ -183,23 +197,24 @@ window.BTCM_APP = (function () {
   }
 
   // ------------------------------------------------------------------ display options
-  // On by default when enabled in config.js; the keyboard (S) and the status-bar buttons toggle them (remembered
-  // by this browser); the URL wins (?sessions=0), handy for OBS browser sources.
-  const view = { sessions: true };
-  const VIEW_BTN = { sessions: 'sessBtn' };
+  // On by default when enabled in config.js; the keyboard (H, S) and the status-bar buttons toggle them (remembered
+  // by this browser); the URL wins (?heatmap=0&sessions=1), handy for OBS browser sources.
+  const view = { heatmap: true, sessions: true };
+  const VIEW_BTN = { heatmap: 'heatBtn', sessions: 'sessBtn' };
   let viewReady = false;
   const stored = (k) => { try { return localStorage.getItem('btcm.' + k); } catch (e) { return null; } };
   function initView(meta) {
     viewReady = true;
     const url = new URLSearchParams(location.search);
-    const conf = { sessions: !(meta.sessions && meta.sessions.enabled === false) };
+    const conf = { heatmap: !!(meta.heatmap && meta.heatmap.enabled), sessions: !(meta.sessions && meta.sessions.enabled === false) };
     for (const k of Object.keys(view)) { const s = stored(k); view[k] = url.has(k) ? url.get(k) !== '0' : s != null ? s === '1' : conf[k]; }
     if (meta.alerts && meta.alerts.audio === false) { AU.setEnabled(false); syncAudioUi(); } // config.js alerts.audio
+    $('heatBtn').classList.toggle('hidden', !conf.heatmap); // heatmap disabled in config.js: no data is collected
     applyView();
   }
   function toggleView(k) { view[k] = !view[k]; try { localStorage.setItem('btcm.' + k, view[k] ? '1' : '0'); } catch (e) { /* storage unavailable */ } applyView(); }
   function applyView() {
-    chart.showSessions = view.sessions;
+    chart.showSessions = view.sessions; chart.showHeat = view.heatmap;
     for (const k of Object.keys(VIEW_BTN)) { const b = $(VIEW_BTN[k]); if (b) b.classList.toggle('off', !view[k]); }
     dirty = true;
   }
@@ -247,12 +262,12 @@ window.BTCM_APP = (function () {
     btn.addEventListener('click', () => { AU.unlock(); AU.play('click'); setTimeout(syncAudioUi, 300); });
     ab.addEventListener('click', (e) => { e.stopPropagation(); AU.setEnabled(!AU.isEnabled()); if (AU.isEnabled()) { AU.unlock(); AU.play('click'); } syncAudioUi(); });
     setTimeout(() => { AU.unlock(); syncAudioUi(); }, 500);
-    // display options: buttons + keyboard (M: mute alerts, S: sessions)
+    // display options: buttons + keyboard (M: mute alerts, H: heatmap, S: sessions)
     for (const k of Object.keys(VIEW_BTN)) $(VIEW_BTN[k]).addEventListener('click', (e) => { e.stopPropagation(); toggleView(k); });
     document.addEventListener('keydown', (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const k = (e.key || '').toLowerCase();
-      if (k === 'm') ab.click(); else if (k === 's') toggleView('sessions');
+      if (k === 'm') ab.click(); else if (k === 'h') toggleView('heatmap'); else if (k === 's') toggleView('sessions');
     });
 
     setInterval(refreshAges, 1000);

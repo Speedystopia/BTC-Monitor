@@ -3,10 +3,10 @@
  *
  *  Consumes normalized exchange events (trades, order-book snapshots/deltas,
  *  liquidations, tickers) and produces the dashboard state as messages:
- *    snapshot | tick | analysis | scanner | pct | book | orders | liq |
- *    assets | calendar | status | alert
+ *    snapshot | tick | analysis | scanner | pct | book | heat | orders |
+ *    liq | assets | calendar | status | alert
  * ========================================================================== */
-module.exports = (function (I, C, A) {
+module.exports = (function (I, C, A, H) {
   'use strict';
 
   const EXCHANGE_NAMES = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', bybit: 'Bybit', okx: 'OKX', bitstamp: 'Bitstamp' };
@@ -83,6 +83,10 @@ module.exports = (function (I, C, A) {
       this.scanner = []; this.pct = [];
       this._lastAnalysisAt = 0; this._lastScanAt = 0; this._lastBookAt = 0; this._lastStatusAt = 0; this._lastOrdersAt = 0;
       this._ordersDirty = false;
+      // order-book liquidity heatmap (resting liquidity over time, averaged per minute)
+      this.hcfg = Object.assign({ enabled: true, rangePct: 3, historyHours: 72 }, this.cfg.heatmap || {});
+      this.heatmap = this.hcfg.enabled ? new H.LiquidityHeatmap({ step: this.obcfg.bucketUsd, historyHours: this.hcfg.historyHours }) : null;
+      this._lastHeatAt = 0;
       this.historyLoaded = false;
       this.startedAt = this.now();
     }
@@ -222,9 +226,9 @@ module.exports = (function (I, C, A) {
       this._ordersDirty = true;
     }
     /** Aggregated liquidity profile around the price (usd per bucket). */
-    bookProfile() {
+    bookProfile(rangePct) {
       const mid = this.index; if (!(mid > 0)) return null;
-      const b = this.obcfg.bucketUsd, range = mid * this.obcfg.profileRangePct / 100;
+      const b = this.obcfg.bucketUsd, range = mid * (rangePct || this.obcfg.profileRangePct) / 100;
       const lo = mid - range, hi = mid + range;
       const bins = new Map();
       let bestBid = 0, bestAsk = 0, bidUsd = 0, askUsd = 0;
@@ -337,7 +341,12 @@ module.exports = (function (I, C, A) {
       const shared = this._tickShared(now);
       for (const tf of this.chartTfs) this._emitTick(tf, now, closedTfs.has(tf), shared);
       for (const tf of closedTfs) this.emit('message', this.analysisMessage(tf));
-      if (now - this._lastBookAt >= 1000) { this._lastBookAt = now; const prof = this.bookProfile(); if (prof) this.emit('message', Object.assign({ type: 'book' }, prof)); }
+      if (now - this._lastBookAt >= 1000) {
+        this._lastBookAt = now;
+        const prof = this.bookProfile(); if (prof) this.emit('message', Object.assign({ type: 'book' }, prof));
+        if (this.heatmap) { const wide = this.bookProfile(this.hcfg.rangePct); if (wide) this.heatmap.sample(now, wide.bins); }
+      }
+      if (this.heatmap && (closedTfs.size || now - this._lastHeatAt >= 2000)) this._emitHeat(now, closedTfs);
       if (this._ordersDirty && now - this._lastOrdersAt >= 400) { this._ordersDirty = false; this._lastOrdersAt = now; this.emit('message', { type: 'orders', rows: this.feed }); }
       this._maybeStatus(now);
     }
@@ -438,14 +447,32 @@ module.exports = (function (I, C, A) {
       for (let i = start; i < candles.length; i++) { const c = candles[i]; rows.push({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v, bv: c.bv, ema: a ? a.ema[i] : null, rsi: a ? a.rsi[i] : null, mw: a ? a.mw[i] : null, sig: a ? a.sig[i] : null }); }
       return { type: 'analysis', tf, tfMs: s.tfMs, candles: rows, zones: a ? a.zones : null, markers: a ? a.markers : [], pending: a ? a.pending : null, condition: a ? a.condition : null, base: this.historyBases ? this.historyBases[tf] : null };
     }
+    /** Heatmap columns of the running candle of each chart timeframe, plus the candle that just closed. */
+    _emitHeat(now, closedTfs) {
+      const all = now - this._lastHeatAt >= 2000; if (all) this._lastHeatAt = now;
+      for (const tf of this.chartTfs) {
+        const closed = closedTfs.has(tf); if (!all && !closed) continue;
+        const s = this.series[tf], n = s.candles.length; if (!n) continue;
+        const times = closed && n > 1 ? [s.candles[n - 2].t, s.candles[n - 1].t] : [s.candles[n - 1].t];
+        const cols = this.heatmap.columns(times, s.tfMs).map(H.encode);
+        if (cols.length) this.emit('message', { type: 'heat', tf, cols });
+      }
+    }
+    /** Heatmap of the candles sent to a chart page. */
+    heatSnapshot(tf) {
+      if (!this.heatmap) return null;
+      const s = this.series[tf], c = s.candles, times = [];
+      for (let i = Math.max(0, c.length - this.chartCandles); i < c.length; i++) times.push(c[i].t);
+      return { step: this.heatmap.step, cols: this.heatmap.columns(times, s.tfMs).map(H.encode) };
+    }
     snapshot(tf) {
       tf = this.hasTf(tf) ? tf : this.chartTf;
       return {
         type: 'snapshot',
-        meta: { symbol: this.cfg.symbolLabel || 'Bitcoin / U.S. Dollar', tf, tfMs: C.TIMEFRAMES[tf], timeframes: this.chartTfs, visibleCandles: this.cfg.visibleCandles || 300, indicators: this.icfg, orderBook: this.obcfg, alerts: this.cfg.alerts || {}, refExchange: this.refExchange, icons: this.icons || {}, sessions: this.sessions },
+        meta: { symbol: this.cfg.symbolLabel || 'Bitcoin / U.S. Dollar', tf, tfMs: C.TIMEFRAMES[tf], timeframes: this.chartTfs, visibleCandles: this.cfg.visibleCandles || 300, indicators: this.icfg, orderBook: this.obcfg, alerts: this.cfg.alerts || {}, refExchange: this.refExchange, icons: this.icons || {}, sessions: this.sessions, heatmap: { enabled: !!this.heatmap, rangePct: this.hcfg.rangePct } },
         analysis: this.analysisMessage(tf),
         scanner: this.scanner, pct: this.pct,
-        book: this.bookProfile(), orders: this.feed,
+        book: this.bookProfile(), heat: this.heatSnapshot(tf), orders: this.feed,
         liq: { totals: this.liqTotals(), recent: this.recentLiquidations() },
         assets: this.assetList(), calendar: this.calendarState(), status: this.statusState(),
         price: this.index,
@@ -454,4 +481,4 @@ module.exports = (function (I, C, A) {
   }
 
   return { Engine, LocalBook, Emitter, EXCHANGE_NAMES };
-})(require('./indicators'), require('./candles'), require('./analysis'));
+})(require('./indicators'), require('./candles'), require('./analysis'), require('./heatmap'));

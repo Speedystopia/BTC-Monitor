@@ -54,6 +54,16 @@ module.exports = {
     removedRowTtlSec: 20,   // how long a pulled/filled order stays in the feed (crossed out)
   },
 
+  // Liquidity heatmap drawn behind the candles: resting liquidity of the aggregated books (all exchanges),
+  // sampled every second and averaged per minute, per orderBook.bucketUsd price bucket. Big persistent
+  // walls show up as bright horizontal bands. Toggle on the page: H key.
+  heatmap: {
+    enabled: true,
+    rangePct: 3,            // +/- % around the price recorded
+    historyHours: 72,       // history kept (memory + data/heatmap.json, survives restarts)
+    storeFile: 'data/heatmap.json',
+  },
+
   indicators: {
     emaLength: 50,          // trend line drawn on the chart + market condition rule
     rsiLength: 14,
