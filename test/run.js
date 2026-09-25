@@ -250,9 +250,25 @@ test('simulator seeds all timeframes and runs the analysis', () => {
   assert.strictEqual(engine.scanner.length, 13); assert.strictEqual(engine.pct.length, 7);
 });
 
-group('server (integration)');
 const freePort = () => new Promise((resolve) => { const s = require('net').createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); }); });
 const waitFor = async (cond, ms) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > ms) throw new Error('timed out'); await new Promise(r => setTimeout(r, 50)); } };
+
+group('net');
+test('reconnecting websocket reports a refused handshake with its HTTP status', async () => {
+  const { ReconnectingWS } = require('../server/net');
+  const srv = require('http').createServer();
+  srv.on('upgrade', (req, socket) => socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'));
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  const statuses = [];
+  const conn = new ReconnectingWS({ name: 't', url: `ws://127.0.0.1:${srv.address().port}/`, onMessage() {}, onStatus: (s, d) => statuses.push(d ? `${s} ${d}` : s) });
+  try {
+    await waitFor(() => statuses.some(s => s.startsWith('disconnected')), 5000);
+    assert.deepStrictEqual(statuses, ['connecting', 'error HTTP 403', 'disconnected HTTP 403']);
+    assert.strictEqual(conn.refusals, 1);
+  } finally { conn.close(); srv.close(); }
+});
+
+group('server (integration)');
 const httpGet = (port, p) => new Promise((resolve, reject) => {
   const req = require('http').get({ host: '127.0.0.1', port, path: p, timeout: 5000 }, (res) => { let body = ''; res.on('data', d => { body += d; }); res.on('end', () => resolve({ status: res.statusCode, body })); });
   req.on('timeout', () => req.destroy(new Error('no response for ' + p))); req.on('error', reject);
