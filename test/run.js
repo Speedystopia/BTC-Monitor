@@ -287,17 +287,17 @@ test('engine: a book crossed for 3 s is reloaded by its adapter, at most every 3
   engine.registerExchange('y', {});
   engine.onBookSnapshot('x', [['101', '1'], ['99', '1']], [['100', '1'], ['102', '1']]); // stale ask 100 under the bid 101
   engine.onBookSnapshot('y', [['101', '1']], [['100', '1']]); // crossed but no reload hook: left alone
-  engine.checkBooks(0); engine.checkBooks(1000); engine.checkBooks(2500); assert.strictEqual(calls.length, 0);
-  engine.checkBooks(3000);
+  engine.scanBooks(0); engine.scanBooks(1000); engine.scanBooks(2500); assert.strictEqual(calls.length, 0);
+  engine.scanBooks(3000);
   assert.strictEqual(calls.length, 1); assert.ok(/crossed book \(best bid 101 >= best ask 100\)/.test(calls[0]), calls[0]);
   assert.strictEqual(engine.books.x.ready, false); assert.strictEqual(engine.books.x.size(), 0);
   assert.strictEqual(engine.statusState().exchanges.find(e => e.id === 'x').bookResyncs, 1);
   engine.onBookDelta('x', [['50', '1']], []); assert.strictEqual(engine.books.x.size(), 0); // deltas wait for the next snapshot
   engine.onBookSnapshot('x', [['101', '1']], [['100', '1']]); // still crossed after the reload
-  for (const t of [4000, 5000, 8000, 20000]) engine.checkBooks(t);
+  for (const t of [4000, 5000, 8000, 20000]) engine.scanBooks(t);
   assert.strictEqual(calls.length, 1); // cooldown
-  engine.checkBooks(33000); assert.strictEqual(calls.length, 2);
-  engine.onBookSnapshot('x', [['99', '1']], [['100', '1']]); engine.checkBooks(70000); engine.checkBooks(80000);
+  engine.scanBooks(33000); assert.strictEqual(calls.length, 2);
+  engine.onBookSnapshot('x', [['99', '1']], [['100', '1']]); engine.scanBooks(70000); engine.scanBooks(80000);
   assert.strictEqual(calls.length, 2); assert.strictEqual(engine.books.x.crossedSince, null);
 });
 

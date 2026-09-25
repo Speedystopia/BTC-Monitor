@@ -84,7 +84,7 @@ module.exports = (function (I, C, A, H) {
       this.feed = [];         // large order / trade rows
       this.levelSince = new Map();   // level key -> first time it exceeded the threshold
       this.tradeRows = [];           // recent large trades
-      this._lastFeedAt = 0; this._feedSig = '';
+      this._feedSig = '';
       this._resetLiquidations(); // rolling 24h, per-minute buckets
       this.assets = {};       // label -> {label, price, pct, ts}
       this.calendar = { events: [], updatedAt: 0 };
@@ -94,6 +94,7 @@ module.exports = (function (I, C, A, H) {
       for (const tf of this.chartTfs) this.tfState[tf] = { analysis: null, rsiState: null, lastConditionState: null, lastMarkerKey: null };
       this.scanner = []; this.pct = [];
       this._lastAnalysisAt = 0; this._lastScanAt = 0; this._lastBookAt = 0; this._lastStatusAt = 0; this._lastOrdersAt = 0;
+      this.profile = null; // liquidity profile of the last book scan
       this._ordersDirty = false;
       // order-book liquidity heatmap (resting liquidity over time, averaged per minute)
       this.hcfg = Object.assign({ enabled: true, rangePct: 3, historyHours: 72 }, this.cfg.heatmap || {});
@@ -207,50 +208,79 @@ module.exports = (function (I, C, A, H) {
       this._lastStatusAt = 0;
     }
     /**
-     * Watchdog, every second: a best bid at or above the best ask for 3 s means missed updates (feeds without
-     * checksums: Coinbase, Bybit...). The adapter reloads the book, at most every 30 s.
+     * Once a second, ONE pass over every level of every book feeds:
+     *  - the watchdog: a best bid at or above the best ask for 3 s means missed updates (feeds without
+     *    checksums: Coinbase, Bybit...); the adapter reloads the book, at most every 30 s;
+     *  - the large-order feed (levels >= largeOrderUsd within feedRangePct of the price);
+     *  - the liquidity profile drawn on the chart (profileRangePct) and the heatmap sample (heatmap.rangePct),
+     *    in USD per bucketUsd price bucket.
      */
-    checkBooks(now) {
+    scanBooks(now) {
+      const mid = this.index, ob = this.obcfg, b = ob.bucketUsd, thr = ob.largeOrderUsd;
+      const on = mid > 0;
+      const profR = on ? mid * ob.profileRangePct / 100 : 0, feedR = on ? mid * ob.feedRangePct / 100 : 0;
+      const heatR = on && this.heatmap ? mid * this.hcfg.rangePct / 100 : -1, maxR = Math.max(profR, feedR, heatR);
+      const bins = new Map(); // bucket -> [price, bidUsd, askUsd, bidUsd in the profile range, askUsd in the profile range]
+      const cands = [], seen = new Set();
+      let bestBid = 0, bestAsk = 0, bidUsd = 0, askUsd = 0;
       for (const id of Object.keys(this.books)) {
         const book = this.books[id];
-        if (!book.ready || !book.bids.size || !book.asks.size) { book.crossedSince = null; continue; }
-        let bid = -Infinity, ask = Infinity;
-        for (const p of book.bids.keys()) if (p > bid) bid = p;
-        for (const p of book.asks.keys()) if (p < ask) ask = p;
-        if (bid < ask) { book.crossedSince = null; continue; }
-        if (book.crossedSince == null) { book.crossedSince = now; continue; }
-        if (now - book.crossedSince < 3000 || !book.resync || now - book.resyncAt < 30000) continue;
-        book.resyncAt = now;
-        book.resync(`crossed book (best bid ${bid} >= best ask ${ask})`);
-      }
-    }
-    /**
-     * Large-order feed: the biggest resting levels (>= largeOrderUsd, within
-     * feedRangePct of the price) across all exchanges, newest first. The age of
-     * a row is the time since that level first reached the threshold. Levels that
-     * vanish stay crossed out for a short while. Large trades are interleaved.
-     */
-    refreshFeed(now) {
-      const mid = this.index; if (!(mid > 0)) return;
-      const thr = this.obcfg.largeOrderUsd, range = mid * this.obcfg.feedRangePct / 100;
-      const seen = new Set(); const cands = [];
-      for (const id of Object.keys(this.books)) {
-        const book = this.books[id]; if (!book.ready) continue;
+        if (!book.ready) { book.crossedSince = null; continue; }
         const f = (this.normalizeUsdt && this.ex[id] && this.ex[id].quote === 'USDT') ? this.usdtRate : 1;
-        for (const side of ['bid', 'ask']) {
-          const m = side === 'bid' ? book.bids : book.asks;
+        let hiBid = -Infinity, loAsk = Infinity;
+        for (let ask = 0; ask < 2; ask++) {
+          const m = ask ? book.asks : book.bids, side = ask ? 'ask' : 'bid';
           for (const [p, q] of m) {
-            const pu = p * f; if (Math.abs(pu - mid) > range) continue;
-            const usd = q * pu; if (usd < thr) continue;
-            const key = `${id}|${side}|${p}`;
-            let since = this.levelSince.get(key);
-            if (since == null) { since = now; this.levelSince.set(key, since); }
-            seen.add(key);
-            if (now - since < this.obcfg.minRestMs) continue; // must rest a while (filters market-maker quote flicker)
-            cands.push({ key, kind: 'order', ex: id, side, price: pu, usd, qty: q, ts: since });
+            if (ask) { if (p < loAsk) loAsk = p; } else if (p > hiBid) hiBid = p;
+            if (!on) continue;
+            const pu = p * f, d = pu > mid ? pu - mid : mid - pu; if (d > maxR) continue;
+            const usd = q * pu, k = Math.floor(pu / b);
+            let bin = bins.get(k); if (!bin) { bin = [k * b, 0, 0, 0, 0]; bins.set(k, bin); }
+            if (d <= heatR) bin[1 + ask] += usd;
+            if (d <= profR) {
+              bin[3 + ask] += usd;
+              if (ask) { askUsd += usd; if (!bestAsk || pu < bestAsk) bestAsk = pu; } else { bidUsd += usd; if (pu > bestBid) bestBid = pu; }
+            }
+            if (d <= feedR && usd >= thr) {
+              const key = `${id}|${side}|${p}`;
+              let since = this.levelSince.get(key);
+              if (since == null) { since = now; this.levelSince.set(key, since); }
+              seen.add(key);
+              if (now - since >= ob.minRestMs) cands.push({ key, kind: 'order', ex: id, side, price: pu, usd, qty: q, ts: since }); // must rest a while (filters quote flicker)
+            }
           }
         }
+        this._watchBook(book, hiBid, loAsk, now);
       }
+      if (!on) return { profile: null, heat: null, cands, seen };
+      const sorted = Array.from(bins.values()).sort((x, y) => x[0] - y[0]);
+      const prof = [], heat = [];
+      for (const x of sorted) { if (x[3] || x[4]) prof.push([x[0], x[3], x[4]]); if (x[1] || x[2]) heat.push([x[0], x[1], x[2]]); }
+      return { profile: { bins: prof, bestBid, bestAsk, bidUsd, askUsd, bucket: b }, heat: this.heatmap ? heat : null, cands, seen };
+    }
+    _watchBook(book, bid, ask, now) {
+      if (!(bid >= ask)) { book.crossedSince = null; return; } // also: an empty side
+      if (book.crossedSince == null) { book.crossedSince = now; return; }
+      if (now - book.crossedSince < 3000 || !book.resync || now - book.resyncAt < 30000) return;
+      book.resyncAt = now;
+      book.resync(`crossed book (best bid ${bid} >= best ask ${ask})`);
+    }
+    /** The per-second book work: truncation, one scan, then the feed, the profile message and the heatmap sample. */
+    _bookSecond(now) {
+      for (const id of Object.keys(this.books)) this.books[id].truncate();
+      const scan = this.scanBooks(now);
+      this.refreshFeed(now, scan.cands, scan.seen);
+      this.profile = scan.profile;
+      if (scan.profile) this.emit('message', Object.assign({ type: 'book' }, scan.profile));
+      if (scan.heat) this.heatmap.sample(now, scan.heat);
+    }
+    /**
+     * Large-order feed: the biggest resting levels (candidates of scanBooks) across all exchanges, newest
+     * first. The age of a row is the time since that level first reached the threshold. Levels that vanish
+     * stay crossed out for a short while. Large trades are interleaved.
+     */
+    refreshFeed(now, cands, seen) {
+      if (!(this.index > 0)) return;
       for (const key of this.levelSince.keys()) if (!seen.has(key)) this.levelSince.delete(key);
       cands.sort((a, b) => b.usd - a.usd);
       const top = cands.slice(0, this.obcfg.feedMax);
@@ -268,30 +298,6 @@ module.exports = (function (I, C, A, H) {
       row.key = `t|${row.ex}|${row.ts}|${row.price}`;
       this.tradeRows.unshift(row); if (this.tradeRows.length > 20) this.tradeRows.length = 20;
       this._ordersDirty = true;
-    }
-    /** Aggregated liquidity profile around the price (usd per bucket). */
-    bookProfile(rangePct) {
-      const mid = this.index; if (!(mid > 0)) return null;
-      const b = this.obcfg.bucketUsd, range = mid * (rangePct || this.obcfg.profileRangePct) / 100;
-      const lo = mid - range, hi = mid + range;
-      const bins = new Map();
-      let bestBid = 0, bestAsk = 0, bidUsd = 0, askUsd = 0;
-      for (const id of Object.keys(this.books)) {
-        const book = this.books[id]; if (!book.ready) continue;
-        const f = (this.normalizeUsdt && this.ex[id] && this.ex[id].quote === 'USDT') ? this.usdtRate : 1;
-        for (const [p, q] of book.bids) {
-          const pu = p * f; if (pu < lo || pu > hi) continue;
-          if (pu > bestBid) bestBid = pu;
-          const k = Math.floor(pu / b) * b; const s = bins.get(k) || [k, 0, 0]; s[1] += q * pu; bins.set(k, s); bidUsd += q * pu;
-        }
-        for (const [p, q] of book.asks) {
-          const pu = p * f; if (pu < lo || pu > hi) continue;
-          if (!bestAsk || pu < bestAsk) bestAsk = pu;
-          const k = Math.floor(pu / b) * b; const s = bins.get(k) || [k, 0, 0]; s[2] += q * pu; bins.set(k, s); askUsd += q * pu;
-        }
-      }
-      const arr = Array.from(bins.values()).sort((x, y) => x[0] - y[0]);
-      return { bins: arr, bestBid, bestAsk, bidUsd, askUsd, bucket: b };
     }
 
     // ------------------------------------------------------------------ liquidations
@@ -375,22 +381,12 @@ module.exports = (function (I, C, A, H) {
       // prune rolling buffers
       const cut = now - 60000;
       if (this.recentTrades.length && this.recentTrades[0].ts < cut) { let i = 0; while (i < this.recentTrades.length && this.recentTrades[i].ts < cut) i++; this.recentTrades.splice(0, i); }
-      if (now - this._lastFeedAt >= 1000) {
-        this._lastFeedAt = now;
-        for (const id of Object.keys(this.books)) this.books[id].truncate();
-        this.checkBooks(now);
-        this.refreshFeed(now);
-      }
+      if (now - this._lastBookAt >= 1000) { this._lastBookAt = now; this._bookSecond(now); }
 
       this.recompute(now, closedTfs.size > 0);
       const shared = this._tickShared(now);
       for (const tf of this.chartTfs) this._emitTick(tf, now, closedTfs.has(tf), shared);
       for (const tf of closedTfs) this.emit('message', this.analysisMessage(tf));
-      if (now - this._lastBookAt >= 1000) {
-        this._lastBookAt = now;
-        const prof = this.bookProfile(); if (prof) this.emit('message', Object.assign({ type: 'book' }, prof));
-        if (this.heatmap) { const wide = this.bookProfile(this.hcfg.rangePct); if (wide) this.heatmap.sample(now, wide.bins); }
-      }
       if (this.heatmap && (closedTfs.size || now - this._lastHeatAt >= 2000)) this._emitHeat(now, closedTfs);
       if (this._ordersDirty && now - this._lastOrdersAt >= 400) { this._ordersDirty = false; this._lastOrdersAt = now; this.emit('message', { type: 'orders', rows: this.feed }); }
       this._maybeStatus(now);
@@ -517,7 +513,7 @@ module.exports = (function (I, C, A, H) {
         meta: { symbol: this.cfg.symbolLabel || 'Bitcoin / U.S. Dollar', tf, tfMs: C.TIMEFRAMES[tf], timeframes: this.chartTfs, visibleCandles: this.cfg.visibleCandles || 300, indicators: this.icfg, orderBook: this.obcfg, alerts: this.cfg.alerts || {}, refExchange: this.refExchange, icons: this.icons || {}, sessions: this.sessions, heatmap: { enabled: !!this.heatmap, rangePct: this.hcfg.rangePct } },
         analysis: this.analysisMessage(tf),
         scanner: this.scanner, pct: this.pct,
-        book: this.bookProfile(), heat: this.heatSnapshot(tf), orders: this.feed,
+        book: this.profile, heat: this.heatSnapshot(tf), orders: this.feed,
         liq: { totals: this.liqTotals(), recent: this.recentLiquidations() },
         assets: this.assetList(), calendar: this.calendarState(), status: this.statusState(),
         price: this.index,
