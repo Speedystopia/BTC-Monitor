@@ -5,10 +5,13 @@ window.BTCM_UTIL = (function () {
   'use strict';
   const nf2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const nf0 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+  // one formatter per decimal count: toLocaleString(locale, options) builds a new one on every call (~40x slower)
+  const nfFixed = {};
+  const fixed = (d) => nfFixed[d] || (nfFixed[d] = new Intl.NumberFormat('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
 
   function fmtPrice(p, decimals) {
     if (p == null || !isFinite(p)) return '—';
-    if (decimals != null) return p.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    if (decimals != null) return fixed(decimals).format(p);
     if (Math.abs(p) >= 1000) return nf2.format(p);
     if (Math.abs(p) >= 10) return p.toFixed(2);
     if (Math.abs(p) >= 1) return p.toFixed(3);

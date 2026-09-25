@@ -19,12 +19,13 @@ window.BTCM_APP = (function () {
   // Brand colours + monograms used when a logo could not be downloaded.
   const BRAND = { binance: ['#F3BA2F', '#000', 'B'], coinbase: ['#0052FF', '#fff', 'C'], kraken: ['#5741D9', '#fff', 'K'], bybit: ['#F7A600', '#000', 'By'], okx: ['#2a2a2a', '#fff', 'OKX'], bitstamp: ['#0B9B4B', '#fff', 'BS'],
     btc: ['#F7931A', '#fff', '₿'], eth: ['#627EEA', '#fff', 'Ξ'], xrp: ['#23292F', '#fff', '✕'], sol: ['#9945FF', '#fff', 'S'], gold: ['#D4AF37', '#000', 'Au'], sp500: ['#C62828', '#fff', '500'], dxy: ['#2E7D32', '#fff', '$'] };
-  const fallbackCache = {};
+  const fallbackCache = Object.create(null);
   function fallbackIcon(key) {
     if (fallbackCache[key]) return fallbackCache[key];
-    const [bg, fg, txt] = BRAND[key] || ['#555', '#fff', (key || '?').slice(0, 2).toUpperCase()];
+    const [bg, fg, txt] = Object.prototype.hasOwnProperty.call(BRAND, key) ? BRAND[key] : ['#555', '#fff', String(key || '?').slice(0, 2).toUpperCase()];
     const size = txt.length >= 3 ? 9 : txt.length === 2 ? 12 : 15;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="${bg}"/><text x="16" y="17" text-anchor="middle" dominant-baseline="central" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="${size}" fill="${fg}">${txt}</text></svg>`;
+    // escaped: an asset label with & < ' would otherwise break the SVG or the inline onerror handler
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="${bg}"/><text x="16" y="17" text-anchor="middle" dominant-baseline="central" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="${size}" fill="${fg}">${U.escapeHtml(txt)}</text></svg>`;
     return (fallbackCache[key] = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg));
   }
   function iconSrc(key) { return (window.BTCM_ICONS && window.BTCM_ICONS[key]) || state.icons[key] || fallbackIcon(key); }
