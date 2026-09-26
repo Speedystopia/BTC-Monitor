@@ -48,8 +48,6 @@ Xvfb "$DISPLAY" -screen 0 "${WIDTH}x${HEIGHT}x24" -nolisten tcp -dpi 96 >/dev/nu
 XVFB=$!
 for _ in $(seq 100); do [ -e "/tmp/.X11-unix/X$DISPLAY_NUM" ] && break; sleep 0.1; done
 [ -e "/tmp/.X11-unix/X$DISPLAY_NUM" ] || fail "the virtual screen did not start"
-# the mouse rests in a corner: over the chart it would draw the crosshair on the stream
-xdotool mousemove $((WIDTH - 1)) $((HEIGHT - 1)) 2>/dev/null || true
 
 AUDIO_IN=(-f lavfi -thread_queue_size 1024 -i anullsrc=channel_layout=stereo:sample_rate=44100)
 if [ "$AUDIO" = 1 ]; then
@@ -78,7 +76,17 @@ browser() {
       --autoplay-policy=no-user-gesture-required --password-store=basic --hide-scrollbars --lang=en-US \
       --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding \
       --disable-features=Translate,MediaRouter --disable-component-update --disable-sync \
-      "$PAGE_URL" >/dev/null 2>&1
+      "$PAGE_URL" >/dev/null 2>&1 &
+    local pid=$! corner="x:$((WIDTH - 1)) y:$((HEIGHT - 1)) "
+    # the mouse rests in a corner: over the chart it would draw the crosshair on the stream
+    # (Xvfb only moves it once the browser window is there)
+    for _ in $(seq 60); do
+      kill -0 "$pid" 2>/dev/null || break
+      xdotool mousemove $((WIDTH - 1)) $((HEIGHT - 1)) 2>/dev/null
+      [[ $(xdotool getmouselocation 2>/dev/null) == "$corner"* ]] && break
+      sleep 0.5
+    done
+    wait "$pid"
     log "Chromium stopped (code $?), restarting"
     sleep 3
   done
