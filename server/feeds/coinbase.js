@@ -34,7 +34,8 @@ function parse(msg) {
 function start(ctx) {
   const { engine, symbol, log } = ctx;
   const id = 'coinbase';
-  engine.registerExchange(id, { quote: 'USD' });
+  const reload = (why) => { log(`order book ${why}: reloading`); engine.invalidateBook(id); conn.reconnect(); };
+  engine.registerExchange(id, { quote: 'USD', resyncBook: reload }); // level2_batch: no sequence nor checksum, the engine watches for a crossed book
   const assetIds = (ctx.assets || []).map(a => a.symbol);
   const conn = new ReconnectingWS({
     name: id, url: WS_URL, staleMs: 45000,
@@ -58,6 +59,9 @@ function start(ctx) {
   return { stop: () => conn.close() };
 }
 
+/** Exchange clock (ms). */
+async function serverTime() { return Math.round(+(await getJson(`${REST}/time`)).epoch * 1000); }
+
 /** Historical candles (paged, 300 per request). Oldest first. */
 async function history(symbol, tf, limit) {
   const g = GRAN[tf]; if (!g) return [];
@@ -76,4 +80,4 @@ async function history(symbol, tf, limit) {
   return Array.from(out.values()).sort((a, b) => a.t - b.t);
 }
 
-module.exports = { start, history, parse };
+module.exports = { start, history, serverTime, parse, tickers: true }; // tickers: can stream config.assets

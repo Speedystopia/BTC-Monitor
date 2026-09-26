@@ -5,10 +5,8 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "sim": "node server/index.js --sim",
     "test": "node test/run.js",
-    "build:demo": "node tools/build-demo.js",
-    "build:exe": "npx -y -p node@20.19.5 node tools/build-exe.js"
+    "build:exe": "npx -y -p node@24.21.0 node tools/build-exe.js"
   },
   "engines": {
     "node": ">=18"
@@ -17,10 +15,12 @@
   "dependencies": {
     "ws": "^8.18.0"
   },
+  "optionalDependencies": {
+    "https-proxy-agent": "^7.0.6",
+    "undici": "^6.21.0"
+  },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "https-proxy-agent": "^7.0.6",
-    "postject": "^1.0.0-alpha.6",
-    "undici": "^6.21.0"
+    "postject": "^1.0.0-alpha.6"
   }
 }

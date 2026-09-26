@@ -1,11 +1,7 @@
 /* ============================================================================
- *  core/indicators.js — pure indicator math (runs in Node and in the browser)
+ *  core/indicators.js — pure indicator math
  * ========================================================================== */
-(function (root, factory) {
-  const mod = factory();
-  if (typeof module !== 'undefined' && module.exports) module.exports = mod;
-  else { root.BTCM = root.BTCM || {}; root.BTCM.indicators = mod; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+module.exports = (function () {
   'use strict';
 
   /** Simple moving average (null until `len` values are available). */
@@ -105,23 +101,6 @@
     return { mw, sig };
   }
 
-  /** Swing highs / lows: index i is a pivot if it is the extreme of [i-s, i+s]. */
-  function pivots(candles, strength) {
-    const highs = [], lows = [];
-    for (let i = strength; i < candles.length - strength; i++) {
-      let isHigh = true, isLow = true;
-      const h = candles[i].h, l = candles[i].l;
-      for (let j = i - strength; j <= i + strength && (isHigh || isLow); j++) {
-        if (j === i) continue;
-        if (candles[j].h > h) isHigh = false;
-        if (candles[j].l < l) isLow = false;
-      }
-      if (isHigh) highs.push(i);
-      if (isLow) lows.push(i);
-    }
-    return { highs, lows };
-  }
-
   /** Trend state of a series: bull = close above EMA, up = EMA rising. */
   function trendState(closes, emaLen) {
     if (!closes || closes.length < 3) return null;
@@ -148,5 +127,5 @@
     return (price / ref - 1) * 100;
   }
 
-  return { sma, ema, emaFast, rsi, atr, momentumWave, pivots, trendState, pctChange };
-});
+  return { sma, ema, emaFast, rsi, atr, momentumWave, trendState, pctChange };
+})();

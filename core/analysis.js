@@ -3,19 +3,12 @@
  *  supply/demand zones, possible reversal markers, market condition tracking,
  *  multi-timeframe scanner and percentage changes.
  * ========================================================================== */
-(function (root, factory) {
-  const deps = (typeof module !== 'undefined' && module.exports)
-    ? { indicators: require('./indicators'), candles: require('./candles') }
-    : { indicators: root.BTCM.indicators, candles: root.BTCM.candles };
-  const mod = factory(deps.indicators, deps.candles);
-  if (typeof module !== 'undefined' && module.exports) module.exports = mod;
-  else { root.BTCM = root.BTCM || {}; root.BTCM.analysis = mod; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (I, C) {
+module.exports = (function (I, C) {
   'use strict';
 
   const DEFAULTS = {
     emaLength: 50, rsiLength: 14, rsiOverbought: 70, rsiOversold: 30, scannerEma: 21,
-    zoneLookback: 288, pivotStrength: 6, waveOverbought: 120, waveOversold: -120,
+    zoneLookback: 288, waveOverbought: 120, waveOversold: -120,
     reversalWindow: 6, conditionConfirmBars: 2,
   };
 
@@ -137,16 +130,17 @@
     const s1h = seriesByTf['1h'] ? seriesByTf['1h'].candles : [];
     const s1d = seriesByTf['1d'] ? seriesByTf['1d'].candles : [];
     const H = C.HOUR, D = C.DAY;
+    const covers = (arr, ms) => arr.length > 0 && arr[0].t <= now - ms;
     return [
       { label: '6H', value: I.pctChange(s5, 6 * H, now, price) },
       { label: '12H', value: I.pctChange(s5, 12 * H, now, price) },
       { label: '24H', value: I.pctChange(s5, 24 * H, now, price) },
       { label: '48H', value: I.pctChange(s5, 48 * H, now, price) },
-      { label: '72H', value: I.pctChange(s5.length >= 800 ? s5 : s1h, 72 * H, now, price) },
+      { label: '72H', value: I.pctChange(covers(s5, 72 * H) ? s5 : s1h, 72 * H, now, price) }, // 5m when it reaches back 72h
       { label: '1W', value: I.pctChange(s1h, 7 * D, now, price) },
       { label: '1M', value: I.pctChange(s1d, 30 * D, now, price) },
     ];
   }
 
   return { DEFAULTS, analyzeChart, detectReversals, detectZones, trackCondition, scanTrends, pctChanges, tfLabel };
-});
+})(require('./indicators'), require('./candles'));

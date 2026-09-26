@@ -34,7 +34,7 @@ class IconStore {
     const cfg = Object.assign({ enabled: true, sources: {} }, (config && config.icons) || {});
     this.enabled = cfg.enabled;
     this.sources = Object.assign({}, DEFAULT_SOURCES, cfg.sources);
-    this.files = {}; // key -> { file, mime }
+    this.files = Object.create(null); // key -> { file, mime } (no prototype: /icons/__proto__ must be a 404)
     try { fs.mkdirSync(this.dir, { recursive: true }); } catch (e) { /* ignore */ }
     this.scanCache();
   }

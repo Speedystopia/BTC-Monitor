@@ -4,6 +4,7 @@
  *  liquidations (allLiquidation), REST kline history.
  * ========================================================================== */
 const { ReconnectingWS, getJson } = require('../net');
+const { Guard } = require('./integrity');
 
 const WS_SPOT = 'wss://stream.bybit.com/v5/public/spot';
 const WS_LINEAR = 'wss://stream.bybit.com/v5/public/linear';
@@ -37,8 +38,11 @@ function parse(msg) {
 function start(ctx) {
   const { engine, symbol, log } = ctx;
   const id = 'bybit';
-  engine.registerExchange(id, { quote: symbol.endsWith('USDT') ? 'USDT' : 'USD' });
-  let bookReady = false;
+  let bookReady = false, lastU = null;
+  const order = new Guard('Bybit book update order', log);
+  const reload = (why) => { log(`order book ${why}: reloading`); bookReady = false; engine.invalidateBook(id); conn.reconnect(); };
+  // orderbook.200: truncated to its depth like Kraken's; update ids only grow (no checksum on Bybit)
+  engine.registerExchange(id, { quote: symbol.endsWith('USDT') ? 'USDT' : 'USD', bookDepth: 200, resyncBook: reload });
   const conn = new ReconnectingWS({
     name: id, url: WS_SPOT, staleMs: 45000, pingEvery: 20000, pingPayload: JSON.stringify({ op: 'ping' }),
     onStatus: (s, d) => { engine.setStatus(id, s === 'connected' ? 'ok' : s, d); if (s !== 'connected') bookReady = false; },
@@ -46,8 +50,11 @@ function start(ctx) {
     onMessage: (raw) => {
       const p = parse(raw); if (!p) return;
       if (p.kind === 'trades') { for (const t of p.trades) if (t.symbol === symbol) engine.onTrade(id, t); } // note: Bybit tags every trade push as "snapshot"
-      else if (p.kind === 'snapshot' && p.symbol === symbol) { engine.onBookSnapshot(id, p.bids, p.asks); bookReady = true; }
-      else if (p.kind === 'delta' && p.symbol === symbol) { if (bookReady) engine.onBookDelta(id, p.bids, p.asks); }
+      else if (p.kind === 'snapshot' && p.symbol === symbol) { engine.onBookSnapshot(id, p.bids, p.asks); bookReady = true; lastU = p.u; }
+      else if (p.kind === 'delta' && p.symbol === symbol && bookReady) {
+        if (order.enabled && lastU != null && p.u != null && !(p.u > lastU)) { order.fail(Date.now()); return reload(`update ${p.u} after ${lastU}`); }
+        engine.onBookDelta(id, p.bids, p.asks); if (p.u != null) lastU = p.u;
+      }
       else if (p.kind === 'error') log('subscribe error: ' + p.message);
     },
   });
@@ -65,6 +72,9 @@ function startLiquidations(ctx) {
   return { stop: () => conn.close() };
 }
 
+/** Exchange clock (ms). */
+async function serverTime() { const res = await getJson(`${REST}/v5/market/time`); if (res.retCode !== 0) throw new Error(res.retMsg); return +res.time; }
+
 /** Historical klines (max 1000). Oldest first. */
 async function history(symbol, tf, limit) {
   const iv = INTERVAL[tf]; if (!iv) return [];
@@ -73,4 +83,4 @@ async function history(symbol, tf, limit) {
   return (res.result.list || []).map(r => ({ t: +r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5], bv: 0 })).sort((a, b) => a.t - b.t);
 }
 
-module.exports = { start, startLiquidations, history, parse };
+module.exports = { start, startLiquidations, history, serverTime, parse };

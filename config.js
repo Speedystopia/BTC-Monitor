@@ -5,6 +5,9 @@
 module.exports = {
   // HTTP/WebSocket port of the dashboard (open http://localhost:8787)
   port: 8787,
+  // Network interface: '127.0.0.1' = this computer only (no firewall prompt);
+  // '0.0.0.0' = also reachable from the local network (e.g. OBS running on a second PC)
+  host: '127.0.0.1',
 
   // Timeframe shown when the page is opened without ?tf=...  (each page = one timeframe:
   // http://localhost:8787/?tf=1m  ?tf=3m  ?tf=5m  ?tf=15m  ?tf=1h  ?tf=4h  ?tf=8h  ?tf=12h  ?tf=1d)
@@ -24,6 +27,10 @@ module.exports = {
     okx:      { enabled: true,  symbol: 'BTC-USDT' },
     bitstamp: { enabled: true,  symbol: 'btcusd' },
   },
+
+  // Align the candles and countdowns on the exchanges' clock (Binance, Coinbase, Bybit, OKX time
+  // requests every 10 minutes) instead of trusting this computer's clock
+  syncClock: true,
 
   // Exchange whose last price is shown as the secondary price label (reference)
   referenceExchange: 'coinbase',
@@ -51,6 +58,17 @@ module.exports = {
     removedRowTtlSec: 20,   // how long a pulled/filled order stays in the feed (crossed out)
   },
 
+  // Liquidity heatmap drawn behind the candles: resting liquidity of the aggregated books (all exchanges),
+  // sampled every second and averaged per minute, per orderBook.bucketUsd price bucket. Big persistent
+  // walls show up as bright horizontal bands. Toggle on the page: H key; intensity: [ and ] keys.
+  heatmap: {
+    enabled: true,
+    rangePct: 3,            // +/- % around the price recorded
+    historyHours: 72,       // history kept (memory + data/heatmap.json, survives restarts)
+    storeFile: 'data/heatmap.json',
+    gain: 1,                // default intensity (page: [ and ] keys, ?heatgain=1.5)
+  },
+
   indicators: {
     emaLength: 50,          // trend line drawn on the chart + market condition rule
     rsiLength: 14,
@@ -58,11 +76,27 @@ module.exports = {
     rsiOversold: 30,
     scannerEma: 21,         // EMA used by the multi-timeframe trend scanner
     zoneLookback: 288,      // candles scanned for supply/demand zones (288 x 5m = 24h)
-    pivotStrength: 6,       // bars on each side to confirm a swing high/low
     waveOverbought: 120,    // Momentum Wave thresholds used by reversal detection
     waveOversold: -120,
     reversalWindow: 6,      // bars after an extreme in which a cross confirms a reversal
     conditionConfirmBars: 2 // consecutive closes needed to flip the market condition
+  },
+
+  // Market sessions drawn as boxes (session high / low) on the charts up to `maxTimeframe`. Toggle on the page: S key.
+  // Hours are UTC (the default list covers the 24 hours); a session that ends before it starts runs past midnight.
+  // Add `tz` (IANA time zone) to give local exchange hours that follow daylight saving time, e.g.
+  //   { name: 'London', start: '08:00', end: '16:30', tz: 'Europe/London', color: '#66bb6a' }
+  //   { name: 'New York', start: '09:30', end: '16:00', tz: 'America/New_York', color: '#42a5f5' }
+  sessions: {
+    enabled: true,
+    maxTimeframe: '1h',
+    list: [
+      { name: 'Sydney',    start: '21:00', end: '23:00', color: '#26a69a' },
+      { name: 'Asia',      start: '23:00', end: '07:00', color: '#ff9800' },
+      { name: 'Frankfurt', start: '07:00', end: '08:00', color: '#ba68c8' },
+      { name: 'London',    start: '08:00', end: '13:00', color: '#66bb6a' },
+      { name: 'New York',  start: '13:00', end: '21:00', color: '#42a5f5' },
+    ],
   },
 
   // Multi-asset reference panel (top right). source: "binance" | "coinbase" | "yahoo"
@@ -101,6 +135,25 @@ module.exports = {
     overboughtOversold: true,    // RSI crossing the thresholds
     conditionChange: true,       // bullish/bearish market condition flips
     reversal: true,              // confirmed possible reversal
+  },
+
+  // Public website on a server (Docker: fill these in .env, see README "Publicité"). Only the visitors who
+  // come through `domains` get the legal link and the ads: OBS, the stream and this computer open the
+  // dashboard by another address and never show ads (impressions made by a machine are invalid traffic).
+  site: {
+    domains: process.env.DOMAIN || '',              // the site's domain name(s), e.g. 'btcmonitor.fr'
+    // legal notice and privacy page /privacy.html (public/privacy.html): required in France and by AdSense
+    legal: {
+      editor: process.env.SITE_EDITOR || '',        // your name (or company) and postal address
+      contact: process.env.SITE_CONTACT || '',      // e-mail address (and phone number)
+      hosting: process.env.SITE_HOSTING || '',      // hosting company: name, address, phone number
+    },
+    // Google AdSense: publisher id ca-pub-... (empty = no ads) and the display ad unit id shown
+    // under the order-book feed (phones: under the chart)
+    adsense: {
+      client: process.env.ADSENSE_CLIENT || '',
+      slot: process.env.ADSENSE_SLOT || '',
+    },
   },
 
   // Optional: HTTP(S) proxy for outbound connections (corporate networks).

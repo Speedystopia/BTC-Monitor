@@ -5,11 +5,12 @@
  *  application"). Can be run from Linux, macOS or Windows.
  *
  *    npm run build:exe           -> BTC-Monitor.exe at the project root
- *  (runs the tool with Node 20 via npx: the Windows Node 20 binary is ~15% smaller
- *   than Node 22, which keeps the archive small; any Node >= 20.12 works)
+ *  (runs the tool with Node 24 LTS via npx, supported with security fixes until
+ *   April 2028: the executable embeds the Node version that runs this tool;
+ *   any Node >= 20.12 works, but Node 20 is end-of-life since April 2026)
  *
  *  Steps: bundle the server with esbuild -> generate the SEA blob (with the
- *  public/, core/ and config.js assets embedded) -> download the official
+ *  public/ and config.js assets embedded) -> download the official
  *  Windows node.exe of the same version from nodejs.org (SHA-256 verified)
  *  -> inject the blob with postject.
  * ========================================================================== */
@@ -64,7 +65,6 @@ async function download(url, file) {
   // 2. SEA config with embedded assets --------------------------------------
   const assets = {};
   for (const rel of walk(path.join(ROOT, 'public'), ROOT, [])) assets[rel] = path.join(ROOT, rel);
-  for (const rel of walk(path.join(ROOT, 'core'), ROOT, [])) assets[rel] = path.join(ROOT, rel);
   assets['config.js'] = path.join(ROOT, 'config.js');
   const seaCfg = { main: bundle, output: path.join(BUILD, 'sea-prep.blob'), disableExperimentalSEAWarning: true, useCodeCache: false, assets };
   fs.writeFileSync(path.join(BUILD, 'sea-config.json'), JSON.stringify(seaCfg, null, 2));

@@ -24,15 +24,19 @@ function embedded(key) {
   try { return Buffer.from(sea.getAsset(key)); } catch (e) { return null; }
 }
 
-/** Load config.js from the root folder; in executable mode create it from the default on first run. */
-function loadConfig() {
+/**
+ * Load config.js from the root folder; in executable mode create it from the default on first run.
+ * `explicit` (--config <file>) loads another configuration file instead.
+ */
+function loadConfig(explicit) {
+  const { createRequire } = require('module');
+  if (explicit) { const f = path.resolve(explicit); return createRequire(f)(f); } // createRequire: plain require is limited in the executable
   const file = path.join(ROOT, 'config.js');
   if (!IS_EXE) return require(file);
   if (!fs.existsSync(file)) {
     const def = embedded('config.js');
     if (def) { try { fs.writeFileSync(file, def); } catch (e) { /* read-only folder: fall through */ } }
   }
-  const { createRequire } = require('module');
   if (fs.existsSync(file)) {
     try { return createRequire(file)(file); }
     catch (e) { console.error(`config.js could not be loaded (${e.message}); using the built-in defaults`); }
@@ -44,10 +48,13 @@ function loadConfig() {
   return mod.exports;
 }
 
+/** True when `full` lies inside `root` (a sibling folder sharing the name prefix does not; `root` may be a drive root). */
+function isInside(root, full) { const base = root.endsWith(path.sep) ? root : root + path.sep; return full.startsWith(base); }
+
 /** Read a static file: disk first (customisable), then the embedded copy. */
 function readStatic(relPath, cb) {
   const full = path.normalize(path.join(ROOT, relPath));
-  if (!full.startsWith(ROOT)) return cb(new Error('forbidden'));
+  if (!isInside(ROOT, full)) return cb(new Error('forbidden'));
   fs.readFile(full, (err, data) => {
     if (!err) return cb(null, data);
     const emb = embedded(relPath.replace(/\\/g, '/').replace(/^\//, ''));
@@ -69,4 +76,4 @@ function openBrowser(url) {
   } catch (e) { /* ignore */ }
 }
 
-module.exports = { IS_EXE, ROOT, loadConfig, readStatic, openBrowser, embedded };
+module.exports = { IS_EXE, ROOT, loadConfig, readStatic, openBrowser, embedded, isInside };

@@ -1,0 +1,15 @@
+# HTTPS in front of the dashboard (docker compose --profile https).
+# DOMAIN comes from .env; the certificate is obtained and renewed automatically
+# (the domain must point to this server, ports 80 and 443 open).
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Private dashboard: uncomment the block, then replace the hash with the output of
+	#   docker compose run --rm caddy caddy hash-password
+	# (user name "btc", or any other)
+	# basic_auth {
+	# 	btc $2a$14$replace.with.the.hash.given.by.caddy.hash-password
+	# }
+
+	reverse_proxy btc-monitor:8787
+}

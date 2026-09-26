@@ -2,10 +2,7 @@
 /* ============================================================================
  *  server/history.js — bootstrap candle history from every enabled exchange
  * ========================================================================== */
-const feeds = {
-  binance: require('./feeds/binance'), coinbase: require('./feeds/coinbase'), kraken: require('./feeds/kraken'),
-  bybit: require('./feeds/bybit'), okx: require('./feeds/okx'), bitstamp: require('./feeds/bitstamp'),
-};
+const feeds = require('./feeds');
 const LIMITS = { '1m': 1000, '3m': 1000, '5m': 1000, '15m': 1000, '1h': 1000, '4h': 1000, '1d': 400 };
 
 /**

@@ -1,6 +1,15 @@
 /* ============================================================================
  *  BTC MONITOR — dashboard styles (designed for 1920x1080, scales down)
  * ========================================================================== */
+/* Barlow / Barlow Condensed served with the dashboard (SIL Open Font License, public/fonts/OFL.txt):
+   no request to Google, works offline and in OBS */
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 400; font-display: swap; src: url(fonts/barlow-latin-400-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 500; font-display: swap; src: url(fonts/barlow-latin-500-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 600; font-display: swap; src: url(fonts/barlow-latin-600-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 700; font-display: swap; src: url(fonts/barlow-latin-700-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 500; font-display: swap; src: url(fonts/barlow-condensed-latin-500-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 600; font-display: swap; src: url(fonts/barlow-condensed-latin-600-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 700; font-display: swap; src: url(fonts/barlow-condensed-latin-700-normal.woff2) format('woff2'); }
 :root {
   --bg: #000000;
   --panel: #0b0b0b;
@@ -33,7 +42,6 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 10px; border-bottom: 1px solid var(--line); background: linear-gradient(#111, #000); }
 .title { font-family: var(--font-cond); font-weight: 700; font-size: 30px; letter-spacing: 1px; color: #f2f2f2; text-transform: uppercase; white-space: nowrap; line-height: 1; }
 .title .pro { color: var(--orange); }
-.title .mode { font-size: 13px; letter-spacing: 2px; color: var(--yellow); margin-left: 12px; vertical-align: middle; border: 1px solid var(--yellow); padding: 1px 6px; border-radius: 3px; }
 .assets { display: grid; grid-template-columns: repeat(2, 300px); grid-auto-rows: 14px; gap: 0 20px; align-items: center; height: 44px; align-content: center; }
 .asset { display: grid; grid-template-columns: 18px 84px 96px 70px; align-items: center; gap: 6px; font-family: var(--font-cond); font-size: 15px; line-height: 14px; white-space: nowrap; }
 .asset .ic { width: 15px; height: 15px; border-radius: 50%; object-fit: cover; background: #222; }
@@ -44,8 +52,9 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 /* ------------------------------------------------------------ main */
 .main { display: grid; grid-template-columns: 308px minmax(0,1fr); min-height: 0; min-width: 0; }
 .feed { border-right: 1px solid var(--line); background: #060606; overflow: hidden; display: flex; flex-direction: column; }
-.feed-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-family: var(--font-cond); font-size: 12px; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; border-bottom: 1px solid var(--line); }
+.feed-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; white-space: nowrap; padding: 4px 8px; font-family: var(--font-cond); font-size: 12px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; border-bottom: 1px solid var(--line); }
 .feed-head b { color: #ddd; }
+.feed-head > span:first-child { overflow: hidden; text-overflow: ellipsis; }
 .rows { flex: 1; overflow: hidden; }
 .row { display: grid; grid-template-columns: 26px 1fr auto 44px; align-items: center; height: 27px; margin: 1px 0; padding: 0 6px 0 4px; font-family: var(--font-cond); font-size: 15px; font-weight: 600; color: #fff; position: relative; }
 .row.bid { background: rgba(34,197,94,var(--a)); } .row.ask { background: rgba(239,68,68,var(--a)); }
@@ -62,6 +71,10 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 
 .chartcol { display: grid; grid-template-rows: minmax(0,1fr) 190px; min-height: 0; min-width: 0; position: relative; }
 .chartwrap { position: relative; min-height: 0; min-width: 0; overflow: hidden; }
+/* chart navigation: drag = scroll back in time, mouse = crosshair (touch: no page scroll over the charts) */
+.chartwrap, .oscwrap { cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
+.chartwrap.dragging, .oscwrap.dragging { cursor: grabbing; }
+.livebtn { position: absolute; z-index: 6; right: 128px; bottom: 30px; font-family: var(--font-cond); font-size: 13px; font-weight: 700; letter-spacing: 1px; color: #fff; background: #2563eb; border: 0; border-radius: 3px; padding: 4px 10px; cursor: pointer; }
 .chartwrap canvas, .oscwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .oscwrap { position: relative; border-top: 1px solid var(--line); min-height: 0; }
 
@@ -81,7 +94,6 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 .lastchange .st.BULLISH { color: var(--green-bright); } .lastchange .st.BEARISH { color: var(--red-bright); }
 .rsibox { right: 132px; top: 64px; font-size: 18px; font-weight: 700; color: #fff; background: rgba(0,0,0,.45); padding: 1px 6px; transition: box-shadow .3s; }
 .rsibox.ob { color: #ff5252; box-shadow: 0 0 12px rgba(255,82,82,.9); } .rsibox.os { color: #2ee56b; box-shadow: 0 0 12px rgba(46,229,107,.9); }
-.simbadge { left: 50%; top: 10px; transform: translateX(-50%); font-size: 13px; letter-spacing: 3px; color: #000; background: var(--yellow); padding: 2px 10px; border-radius: 3px; font-weight: 700; }
 .nodata { left: 50%; top: 45%; transform: translate(-50%, -50%); font-size: 26px; letter-spacing: 3px; color: var(--muted); text-align: center; }
 .nodata small { display: block; font-size: 13px; letter-spacing: 1px; margin-top: 6px; color: #666; }
 
@@ -126,9 +138,13 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 .statusline { display: flex; align-items: center; gap: 12px; font-family: var(--font-cond); font-size: 13px; letter-spacing: .8px; color: #cfcfcf; text-transform: uppercase; white-space: nowrap; min-width: 0; }
 .statusline .alerts { color: #fff; font-weight: 700; cursor: pointer; pointer-events: auto; }
 .statusline .alerts.off { color: #777; }
+.statusline .opt { color: #fff; font-weight: 700; cursor: pointer; pointer-events: auto; }
+.statusline .opt.off { color: #666; }
 .statusline .src { display: flex; gap: 8px; }
 .statusline .src span { display: inline-flex; align-items: center; gap: 4px; }
 .statusline .srcic { width: 14px; height: 14px; border-radius: 50%; object-fit: cover; }
+.statusline .src .nm { font-weight: inherit; }
+.statusline .src .clk { color: var(--yellow); font-weight: 700; }
 .liqrow { display: flex; align-items: center; gap: 10px; }
 .tfswitch { display: flex; gap: 2px; font-family: var(--font-cond); }
 .tfswitch a { color: #bbb; text-decoration: none; padding: 2px 6px; border-radius: 3px; border: 1px solid #2a2a2a; font-weight: 700; font-size: 12px; letter-spacing: .5px; line-height: 1; }
@@ -141,6 +157,16 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
 
 .audiobtn { position: absolute; z-index: 6; right: 14px; top: 8px; font-family: var(--font-cond); font-size: 13px; letter-spacing: 1px; color: #000; background: var(--yellow); border: 0; border-radius: 3px; padding: 4px 10px; cursor: pointer; font-weight: 700; }
 
+/* public website (server/site.js): ad unit at the bottom of the left column (phones: under the chart), legal link */
+.main.withad { grid-template-rows: minmax(0,1fr) auto; }
+.main.withad .feed { grid-row: 1; grid-column: 1; border-right: 0; }
+.main.withad .chartcol { grid-row: 1 / span 2; grid-column: 2; border-left: 1px solid var(--line); }
+.adbox { grid-row: 2; grid-column: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 0 6px; border-top: 1px solid var(--line); background: #060606; overflow: hidden; }
+.adbox .adlabel { font-family: var(--font-cond); font-size: 10px; line-height: 1; letter-spacing: 1px; color: #666; text-transform: uppercase; }
+.statusline .legal, .liqrow .legal { color: #777; font-weight: 600; text-decoration: none; }
+.statusline .legal:hover, .liqrow .legal:hover { color: #fff; }
+.liqrow .legal { display: none; font-family: var(--font-cond); font-size: 12px; letter-spacing: .8px; text-transform: uppercase; white-space: nowrap; }
+
 /* responsive tweaks */
 @media (max-width: 1500px) {
   .assets { grid-template-columns: repeat(2, 250px); }
@@ -151,6 +177,8 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
   .bottombar { grid-template-columns: 60px 300px 100px minmax(0,1fr); }
   .pricebox .big { font-size: 30px; } .pricebox .traded { font-size: 18px; } .gauge { width: 280px; }
   .liqbar { font-size: 14px; gap: 8px; }
+  /* narrower screens: exchange names in the tooltip only, no last-liquidation detail (keeps both footer lines whole) */
+  .statusline .src .nm, .liqbar .last { display: none; }
 }
 @media (max-width: 1100px) {
   .assets { display: none; }
@@ -163,6 +191,8 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
   .feed { display: none; }
   .main { grid-template-columns: 1fr; }
   .chartcol { grid-template-rows: 1fr 120px; }
+  .main.withad .chartcol { grid-row: 1; grid-column: 1; border-left: 0; }
+  .statusline .legal { display: none; } .liqrow .legal { display: inline; }
   .scanner, .pct { display: none; }
   .bottombar { grid-template-columns: minmax(0,1fr); }
   .logo, .liqbar { display: none; }

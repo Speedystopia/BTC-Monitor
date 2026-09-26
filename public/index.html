@@ -4,16 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bitcoin Live Educational Pro Chart</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div id="app">
   <!-- ============================================================ header -->
   <header class="topbar">
-    <div class="title">Bitcoin Live Educational <span class="pro">Pro</span> Chart <span class="mode hidden" id="modeBadge">SIMULATION</span></div>
+    <div class="title">Bitcoin Live Educational <span class="pro">Pro</span> Chart</div>
     <div class="assets" id="assets"></div>
   </header>
 
@@ -33,10 +30,10 @@
         <div class="ov rsibox" id="rsibox">RSI: <span class="v">—</span></div>
         <div class="ov scanner" id="scanner"><div class="sh"><span>Trend</span><span style="text-align:right">TF</span></div><div id="scannerRows"></div></div>
         <div class="ov pct" id="pct"></div>
-        <div class="ov simbadge hidden" id="simbadge">SIMULATED DATA</div>
         <div class="ov nodata hidden" id="nodata">WAITING FOR MARKET DATA<small id="nodataSub">connecting to exchanges…</small></div>
         <div class="toast" id="toast"></div>
         <button class="audiobtn hidden" id="audioBtn">🔊 ENABLE AUDIO ALERTS</button>
+        <button class="livebtn hidden" id="liveBtn" title="Back to the latest candles (double-click on the chart)">LIVE ▸</button>
       </div>
       <div class="oscwrap"><canvas id="osc"></canvas></div>
     </section>
@@ -63,6 +60,8 @@
       </div>
       <div class="statusline">
         <span class="alerts" id="alertsBtn" title="Toggle audio alerts">ALERTS ACTIVE</span>
+        <span class="opt" id="heatBtn" title="Show / hide the order-book liquidity heatmap (H) · intensity: [ and ]">HEATMAP</span>
+        <span class="opt" id="sessBtn" title="Show / hide the market sessions (S)">SESSIONS</span>
         <span class="src" id="sources"></span>
         <span class="tf"><b id="tfShort">M5</b> <span id="tfLong">5 MINUTE TIME FRAME</span></span>
       </div>
@@ -71,9 +70,10 @@
 </div>
 
 <script src="util.js"></script>
+<script src="sessions.js"></script>
 <script src="chart.js"></script>
 <script src="audio.js"></script>
 <script src="app.js"></script>
-<script>BTCM_APP.start({ transport: 'ws' });</script>
+<script>BTCM_APP.start();</script>
 </body>
 </html>

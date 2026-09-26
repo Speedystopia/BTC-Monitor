@@ -3,44 +3,39 @@
  *  server/net.js — outbound HTTP + WebSocket helpers (optional proxy support)
  * ========================================================================== */
 const WebSocket = require('ws');
-const fs = require('fs');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 btc-monitor/1.0';
 
-let proxyUrl = '';
-let wsAgent = null;
-let dispatcher = null;
-let caBundle = null;
+let wsAgent = null;     // WebSocket proxy agent (https-proxy-agent)
+let dispatcher = null;  // fetch proxy dispatcher (undici)
+let proxyFetch = null;  // undici's own fetch: the global one may embed another undici version
 
+// Extra root certificates (TLS-inspecting corporate proxy) are taken from NODE_EXTRA_CA_CERTS by Node itself.
 function configure(cfg) {
-  proxyUrl = (cfg && cfg.proxy) || '';
+  const proxyUrl = (cfg && cfg.proxy) || '';
   if (!proxyUrl) return;
   try {
-    const caPath = process.env.CCR_CA_BUNDLE || process.env.NODE_EXTRA_CA_CERTS || (fs.existsSync('/root/.ccr/ca-bundle.crt') ? '/root/.ccr/ca-bundle.crt' : null);
-    if (caPath && fs.existsSync(caPath)) caBundle = fs.readFileSync(caPath);
-  } catch (e) { /* ignore */ }
-  try {
     const { HttpsProxyAgent } = require('https-proxy-agent');
-    wsAgent = new HttpsProxyAgent(proxyUrl, caBundle ? { ca: caBundle } : {});
+    wsAgent = new HttpsProxyAgent(proxyUrl);
   } catch (e) {
     console.warn('[net] proxy configured but "https-proxy-agent" is not installed: npm i https-proxy-agent@7');
   }
   try {
     const undici = require('undici');
-    dispatcher = new undici.ProxyAgent({ uri: proxyUrl, connect: caBundle ? { ca: caBundle } : {} });
-    globalThis.__btcmFetch = undici.fetch;
+    dispatcher = new undici.ProxyAgent(proxyUrl);
+    proxyFetch = undici.fetch;
   } catch (e) {
     console.warn('[net] proxy configured but "undici" is not installed: npm i undici');
   }
 }
 
+/** fetch through the proxy dispatcher when one is configured. */
+function doFetch(url, init) { return dispatcher && proxyFetch ? proxyFetch(url, Object.assign(init, { dispatcher })) : fetch(url, init); }
+
 /** fetch JSON with timeout (uses the proxy dispatcher when configured). */
 async function getJson(url, opts) {
   const o = Object.assign({ timeout: 15000 }, opts || {});
-  const f = (dispatcher && globalThis.__btcmFetch) ? globalThis.__btcmFetch : fetch;
-  const init = { headers: Object.assign({ 'User-Agent': UA, 'Accept': 'application/json,text/plain,*/*' }, o.headers || {}), signal: AbortSignal.timeout(o.timeout) };
-  if (dispatcher) init.dispatcher = dispatcher;
-  const r = await f(url, init);
+  const r = await doFetch(url, { headers: Object.assign({ 'User-Agent': UA, 'Accept': 'application/json,text/plain,*/*' }, o.headers || {}), signal: AbortSignal.timeout(o.timeout) });
   const txt = await r.text();
   if (!r.ok) { const err = new Error(`HTTP ${r.status} ${url.slice(0, 80)}: ${txt.slice(0, 120)}`); err.status = r.status; throw err; }
   try { return JSON.parse(txt); } catch (e) { throw new Error('bad JSON from ' + url.slice(0, 80)); }
@@ -49,10 +44,7 @@ async function getJson(url, opts) {
 /** fetch binary content (images). Follows redirects. Returns { buffer, contentType }. */
 async function getBytes(url, opts) {
   const o = Object.assign({ timeout: 20000 }, opts || {});
-  const f = (dispatcher && globalThis.__btcmFetch) ? globalThis.__btcmFetch : fetch;
-  const init = { headers: { 'User-Agent': UA, 'Accept': 'image/*,*/*' }, signal: AbortSignal.timeout(o.timeout), redirect: 'follow' };
-  if (dispatcher) init.dispatcher = dispatcher;
-  const r = await f(url, init);
+  const r = await doFetch(url, { headers: { 'User-Agent': UA, 'Accept': 'image/*,*/*' }, signal: AbortSignal.timeout(o.timeout), redirect: 'follow' });
   if (!r.ok) { const err = new Error(`HTTP ${r.status} ${url.slice(0, 80)}`); err.status = r.status; throw err; }
   return { buffer: Buffer.from(await r.arrayBuffer()), contentType: r.headers.get('content-type') || 'application/octet-stream' };
 }
@@ -71,6 +63,7 @@ class ReconnectingWS {
   constructor(opts) {
     this.o = Object.assign({ pingEvery: 0, staleMs: 60000 }, opts);
     this.ws = null; this.closed = false; this.backoff = 1000; this.lastMsg = 0; this.timers = [];
+    this.refusals = 0; // consecutive handshakes answered with an HTTP error (e.g. 403 / 451 in a blocked region)
     this.connect();
   }
   status(s, d) { if (this.o.onStatus) this.o.onStatus(s, d); }
@@ -80,8 +73,9 @@ class ReconnectingWS {
     let ws;
     try { ws = openWebSocket(this.o.url); } catch (e) { this.status('error', e.message); return this.scheduleReconnect(); }
     this.ws = ws;
+    let refused = null; // "HTTP 403": kept as the disconnect detail instead of the generic abort message
     ws.on('open', () => {
-      this.backoff = 1000; this.lastMsg = Date.now(); this.status('connected');
+      this.backoff = 1000; this.refusals = 0; this.lastMsg = Date.now(); this.status('connected');
       try { this.o.onOpen && this.o.onOpen(ws); } catch (e) { console.error(`[${this.o.name}] onOpen`, e); }
       if (this.o.pingEvery) this.timers.push(setInterval(() => {
         if (ws.readyState !== WebSocket.OPEN) return;
@@ -100,14 +94,15 @@ class ReconnectingWS {
     });
     ws.on('ping', () => { this.lastMsg = Date.now(); });
     ws.on('pong', () => { this.lastMsg = Date.now(); });
-    ws.on('error', (e) => { this.status('error', e.message); });
-    ws.on('close', (code, reason) => { this.cleanup(); this.status('disconnected', `${code} ${reason || ''}`.trim()); this.scheduleReconnect(); });
-    ws.on('unexpected-response', (req, res) => { this.status('error', `HTTP ${res.statusCode}`); try { ws.terminate(); } catch (e) { /* ignore */ } });
+    ws.on('error', (e) => { if (!refused) this.status('error', e.message); });
+    ws.on('close', (code, reason) => { this.cleanup(); this.status('disconnected', refused || `${code} ${reason || ''}`.trim()); this.scheduleReconnect(); });
+    ws.on('unexpected-response', (req, res) => { refused = `HTTP ${res.statusCode}`; this.refusals++; this.status('error', refused); try { ws.terminate(); } catch (e) { /* ignore */ } });
   }
   cleanup() { for (const t of this.timers) clearInterval(t); this.timers = []; }
   scheduleReconnect() {
     if (this.closed) return;
-    const delay = this.backoff; this.backoff = Math.min(this.backoff * 2, 30000);
+    // a server that keeps refusing the handshake is retried every 5 minutes at most, not every 30 s
+    const delay = this.backoff; this.backoff = Math.min(this.backoff * 2, this.refusals >= 3 ? 300000 : 30000);
     setTimeout(() => this.connect(), delay);
   }
   send(obj) { if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(typeof obj === 'string' ? obj : JSON.stringify(obj)); }

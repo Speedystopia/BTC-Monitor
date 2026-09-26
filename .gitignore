@@ -1,6 +1,9 @@
 node_modules/
 data/*.json
-dist/
+data/*.tmp
 *.log
 build/
 BTC-Monitor.exe
+
+# docker compose settings (stream keys)
+.env

@@ -37,7 +37,7 @@ function start(ctx) {
   const { engine, symbol, log } = ctx;
   const id = 'binance';
   const sym = symbol.toLowerCase();
-  engine.registerExchange(id, { quote: symbol.endsWith('USDT') ? 'USDT' : 'USD' });
+  engine.registerExchange(id, { quote: symbol.endsWith('USDT') ? 'USDT' : 'USD', resyncBook: (why) => { log(`order book ${why}: reloading`); engine.invalidateBook(id); lastU = null; resync(); } });
   const tickerSymbols = (ctx.assets || []).map(a => a.symbol.toLowerCase());
   const streams = [`${sym}@trade`, `${sym}@depth@100ms`].concat(tickerSymbols.map(s => `${s}@ticker`));
 
@@ -76,7 +76,7 @@ function start(ctx) {
       if (p.kind === 'trade' && p.symbol === symbol) engine.onTrade(id, p.trade);
       else if (p.kind === 'depth' && p.symbol === symbol) {
         if (!synced) { buffer.push(p); if (buffer.length > 5000) buffer.shift(); return; }
-        if (lastU != null && p.U !== lastU + 1) { log(`depth sequence gap (${lastU} -> ${p.U}), resyncing`); return resync(); }
+        if (lastU != null && p.U !== lastU + 1) { log(`depth sequence gap (${lastU} -> ${p.U}), resyncing`); engine.invalidateBook(id); return resync(); }
         engine.onBookDelta(id, p.bids, p.asks); lastU = p.u;
       } else if (p.kind === 'ticker') {
         const a = (ctx.assets || []).find(x => x.symbol.toUpperCase() === p.symbol);
@@ -108,10 +108,13 @@ function startLiquidations(ctx) {
   return { stop: () => { usdtm.close(); coinm.close(); } };
 }
 
+/** Exchange clock (ms), used to correct a computer clock that is off. */
+async function serverTime() { return +(await rest('/api/v3/time')).serverTime; }
+
 /** Historical klines: returns [{t,o,h,l,c,v,bv}] oldest first. */
 async function history(symbol, tf, limit) {
   const rows = await rest(`/api/v3/klines?symbol=${symbol}&interval=${tf}&limit=${Math.min(limit, 1000)}`);
   return rows.map(r => ({ t: r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5], bv: +r[9] }));
 }
 
-module.exports = { start, startLiquidations, history, parse };
+module.exports = { start, startLiquidations, history, serverTime, parse, tickers: true }; // tickers: can stream config.assets

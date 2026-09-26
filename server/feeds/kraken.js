@@ -4,10 +4,13 @@
  *  USDT/USD reference rate.
  * ========================================================================== */
 const { ReconnectingWS, getJson } = require('../net');
+const { KrakenCheck } = require('./integrity');
 
 const WS_URL = 'wss://ws.kraken.com/v2';
 const REST = 'https://api.kraken.com/0/public';
 const INTERVAL = { '1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440 }; // no 3m on Kraken
+// Kraken sends no delete for a level pushed out of the subscribed depth: the engine truncates the book to it
+const BOOK_DEPTH = 1000;
 
 /** Parse a v2 message. Exported for tests. */
 function parse(msg) {
@@ -18,7 +21,7 @@ function parse(msg) {
   if (m.channel === 'book' && Array.isArray(m.data)) {
     const d = m.data[0];
     const bids = (d.bids || []).map(x => [x.price, x.qty]), asks = (d.asks || []).map(x => [x.price, x.qty]);
-    return { kind: m.type === 'snapshot' ? 'snapshot' : 'delta', symbol: d.symbol, bids, asks };
+    return { kind: m.type === 'snapshot' ? 'snapshot' : 'delta', symbol: d.symbol, bids, asks, checksum: d.checksum };
   }
   if (m.channel === 'ticker' && Array.isArray(m.data)) {
     const d = m.data[0];
@@ -31,19 +34,25 @@ function parse(msg) {
 function start(ctx) {
   const { engine, symbol, log } = ctx;
   const id = 'kraken';
-  engine.registerExchange(id, { quote: 'USD' });
+  const check = new KrakenCheck(log); // checksum of the 10 best levels, on the engine's book
+  const reload = (why) => { log(`order book ${why}: reloading`); engine.invalidateBook(id); conn.reconnect(); };
+  engine.registerExchange(id, { quote: 'USD', bookDepth: BOOK_DEPTH, resyncBook: reload });
+  const book = engine.books[id];
   const conn = new ReconnectingWS({
     name: id, url: WS_URL, staleMs: 45000, pingEvery: 25000, pingPayload: JSON.stringify({ method: 'ping' }),
     onStatus: (s, d) => engine.setStatus(id, s === 'connected' ? 'ok' : s, d),
     onOpen: (ws) => {
       ws.send(JSON.stringify({ method: 'subscribe', params: { channel: 'trade', symbol: [symbol], snapshot: false } }));
-      ws.send(JSON.stringify({ method: 'subscribe', params: { channel: 'book', symbol: [symbol], depth: 1000, snapshot: true } }));
+      ws.send(JSON.stringify({ method: 'subscribe', params: { channel: 'book', symbol: [symbol], depth: BOOK_DEPTH, snapshot: true } }));
     },
     onMessage: (raw) => {
       const p = parse(raw); if (!p) return;
       if (p.kind === 'trades') { for (const t of p.trades) if (t.symbol === symbol) engine.onTrade(id, t); }
-      else if (p.kind === 'snapshot' && p.symbol === symbol) { engine.onBookSnapshot(id, p.bids, p.asks); log(`order book snapshot (${p.bids.length}/${p.asks.length})`); }
-      else if (p.kind === 'delta' && p.symbol === symbol) engine.onBookDelta(id, p.bids, p.asks);
+      else if (p.kind === 'snapshot' && p.symbol === symbol) { engine.onBookSnapshot(id, p.bids, p.asks); check.snapshot(book, p.checksum); log(`order book snapshot (${p.bids.length}/${p.asks.length})`); }
+      else if (p.kind === 'delta' && p.symbol === symbol && book.ready) {
+        engine.onBookDelta(id, p.bids, p.asks);
+        const why = check.update(book, p.checksum, Date.now()); if (why) reload(why);
+      }
       else if (p.kind === 'error') log('subscribe error: ' + p.message);
     },
   });

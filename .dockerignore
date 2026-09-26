@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+build
+BTC-Monitor.exe
+data/*.json
+data/*.tmp
+*.log
+.env
+deploy
+test
+tools
