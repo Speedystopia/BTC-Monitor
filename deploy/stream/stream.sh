@@ -20,6 +20,12 @@ DISPLAY_NUM=${DISPLAY_NUM:-99}
 export DISPLAY=:$DISPLAY_NUM
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/runtime-$(id -u)}
 PROFILE=/tmp/chromium-profile
+# A stream never shows ads (impressions made by a machine are invalid traffic for AdSense): the page is asked
+# for no ads (?ads=0, public/app.js) and Google's ad servers are unreachable from this browser anyway.
+NO_ADS='MAP *.googlesyndication.com ~NOTFOUND, MAP *.doubleclick.net ~NOTFOUND, MAP *.googleadservices.com ~NOTFOUND, MAP *.adtrafficquality.google ~NOTFOUND, MAP fundingchoicesmessages.google.com ~NOTFOUND'
+base=${PAGE_URL%%#*}; frag=${PAGE_URL:${#base}}   # ads=0 first: it wins over another ads= of STREAM_PAGE
+if [[ $base == *\?* ]]; then base="${base%%\?*}?ads=0&${base#*\?}"; else base+='?ads=0'; fi
+PAGE_URL=$base$frag
 
 log() { echo "$(date -u +%H:%M:%S) [${2:-stream}] $1"; }
 fail() { log "$1"; exit 1; }
@@ -76,7 +82,7 @@ browser() {
       --autoplay-policy=no-user-gesture-required --password-store=basic --hide-scrollbars --lang=en-US \
       --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding \
       --disable-features=Translate,MediaRouter --disable-component-update --disable-sync \
-      "$PAGE_URL" >/dev/null 2>&1 &
+      --host-resolver-rules="$NO_ADS" "$PAGE_URL" >/dev/null 2>&1 &
     local pid=$! corner="x:$((WIDTH - 1)) y:$((HEIGHT - 1)) "
     # the mouse rests in a corner: over the chart it would draw the crosshair on the stream
     # (Xvfb only moves it once the browser window is there)

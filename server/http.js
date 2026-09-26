@@ -2,12 +2,14 @@
 /* ============================================================================
  *  server/http.js — the dashboard server: static files, JSON API and the
  *  WebSocket that streams the engine messages to the pages.
- *    createApp({ engine, icons, readStatic, log }) -> { server, wss, close }
- *  (listening is left to the caller: server.listen(port, host))
+ *    createApp({ engine, icons, readStatic, log, site }) -> { server, wss, close }
+ *  (listening is left to the caller: server.listen(port, host); `site`: the
+ *  public website settings of server/site.js, legal page and ads)
  * ========================================================================== */
 const http = require('http');
 const path = require('path');
 const { WebSocketServer, WebSocket } = require('ws');
+const { isPublic, publicPage, adsTxt, legalPage, LEGAL_PATH } = require('./site');
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.txt': 'text/plain; charset=utf-8' };
 
@@ -25,7 +27,7 @@ function sendPolicy(msg, buffered) {
   return 'send';
 }
 
-function createApp({ engine, icons, readStatic, log }) {
+function createApp({ engine, icons, readStatic, log, site }) {
   const tfOf = (url) => { const tf = (url.searchParams.get('tf') || '').toLowerCase(); return engine.hasTf(tf) ? tf : engine.chartTf; };
   const json = (res, obj) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
 
@@ -34,11 +36,14 @@ function createApp({ engine, icons, readStatic, log }) {
     if (url.pathname === '/api/state') return json(res, engine.snapshot(tfOf(url)));
     if (url.pathname === '/api/health') return json(res, { ok: true, price: engine.index, status: engine.statusState() });
     if (url.pathname.startsWith('/icons/')) return icons.serve(url.pathname.slice(7).replace(/[^a-z0-9_-]/gi, ''), res);
+    if (url.pathname === '/ads.txt' && adsTxt(site)) { res.writeHead(200, { 'Content-Type': MIME['.txt'] }); return res.end(adsTxt(site)); }
     let file;
     try { file = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400); return res.end('bad request'); }
     if (file.includes('..')) { res.writeHead(403); return res.end('forbidden'); }
     readStatic('public' + file, (err, data) => {
       if (err) { res.writeHead(err.message === 'forbidden' ? 403 : 404); return res.end('not found'); }
+      if (file === '/index.html' && isPublic(site, req)) data = publicPage(site, data); // legal link, ads
+      else if (file === LEGAL_PATH) data = legalPage(site, data);
       res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
       res.end(data);
     });

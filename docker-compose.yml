@@ -14,9 +14,16 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8787:8787"      # this server only; the public goes through Caddy
+    environment:                    # public website: legal notice and ads (.env; empty = not used)
+      DOMAIN: ${DOMAIN:-}
+      SITE_EDITOR: ${SITE_EDITOR:-}
+      SITE_CONTACT: ${SITE_CONTACT:-}
+      SITE_HOSTING: ${SITE_HOSTING:-}
+      ADSENSE_CLIENT: ${ADSENSE_CLIENT:-}
+      ADSENSE_SLOT: ${ADSENSE_SLOT:-}
     volumes:
       - btcm-data:/app/data         # liquidations, heatmap, logos (kept across updates)
-      # - ./config.js:/app/config.js:ro   # your own settings
+      # - ./config.js:/app/config.js:ro   # your own settings (keep its `site` block for the settings above)
 
   caddy:
     image: caddy:2-alpine

@@ -91,7 +91,7 @@ Sur un serveur loué (VPS Linux avec [Docker](https://docs.docker.com/engine/ins
 
 ```bash
 git clone https://github.com/Speedystopia/BTC-Monitor.git && cd BTC-Monitor
-cp .env.example .env        # puis le remplir : domaine, clés de stream
+cp .env.example .env        # puis le remplir : domaine, mentions légales, clés de stream, AdSense
 docker compose up -d --build                                # tableau de bord seul (http://127.0.0.1:8787 sur le serveur)
 docker compose --profile https up -d                        # + https://votre-domaine (certificat automatique)
 docker compose --profile stream up -d --build               # + direct YouTube / Twitch
@@ -110,6 +110,10 @@ docker compose logs -f streamer                             # suivre le direct
 * **Ressources** mesurées : 1920×1080 à 30 i/s ≈ 1 cœur et 700 Mo de mémoire pour le direct, 1280×720 environ la
   moitié. Les vCPU de VPS étant souvent plus lents, prévoir 2 vCPU et 2 Go de mémoire au total pour le 1080p ;
   débit montant ≈ 6 Mb/s par plateforme.
+* **Mentions légales et publicité** : `SITE_*` de `.env` remplissent la page `/privacy.html` (liée depuis le
+  tableau de bord) ; `ADSENSE_CLIENT` / `ADSENSE_SLOT` ajoutent un bloc Google AdSense sous le carnet d'ordres.
+  Seuls les visiteurs du domaine le voient : jamais dans le direct (page ouverte avec `?ads=0`, serveurs
+  publicitaires bloqués), ni dans OBS, ni sur `localhost` (`?ads=0` le masque aussi sur votre écran).
 * **Réglages** : monter votre `config.js` sur `/app/config.js` (ligne prévue dans `docker-compose.yml`) ; les données
   (liquidations, heatmap) sont conservées dans le volume `btcm-data`. Mise à jour :
   `git pull && docker compose --profile stream up -d --build`.
@@ -142,6 +146,7 @@ Tout se règle dans `config.js` (redémarrer le serveur après modification).
 | `heatmap` | heatmap de liquidité : `enabled`, `rangePct` (± % autour du prix enregistré, défaut 3), `historyHours` (historique conservé, défaut 72 h, dans `storeFile` = `data/heatmap.json`), `gain` (intensité par défaut, 1) |
 | `sessions` | sessions de marché dessinées sur le graphique : nom, `start` / `end` (heures **UTC**, ou heures locales avec `tz` = fuseau IANA, heure d'été comprise, ex. `tz: 'Europe/London'`), couleur ; `maxTimeframe` (défaut `1h`) ; `enabled` |
 | `alerts` | alertes audio / visuelles activées (`audio: false` = alertes sonores coupées par défaut) |
+| `site` | site public (Docker : `.env`) : `domains` (nom(s) de domaine), `legal` (mentions légales de `/privacy.html`), `adsense` (`client` = identifiant d'éditeur, `slot` = bloc d'annonces) ; publicité et lien légal réservés aux visiteurs de ces domaines |
 | `proxy` | proxy HTTP(S) sortant optionnel (réseaux d'entreprise) |
 
 Exemple d'événement manuel :
@@ -205,6 +210,7 @@ btc-monitor/
 ├── server/
 │   ├── index.js              point d'entrée : configuration, sauvegardes, sources de données
 │   ├── http.js               serveur HTTP + WebSocket (fichiers, API, diffusion aux pages, clients lents)
+│   ├── site.js               site public : mentions légales, ads.txt, Google AdSense (visiteurs du domaine)
 │   ├── net.js                WebSocket reconnectant, fetch, proxy optionnel
 │   ├── history.js            chargement de l'historique multi-exchanges
 │   ├── calendar.js           calendrier économique
@@ -222,6 +228,7 @@ btc-monitor/
 │   ├── engine.js             prix indice, bougies live, carnet agrégé, feed, liquidations, messages
 │   └── heatmap.js            heatmap de liquidité (colonnes par minute, agrégation par bougie, sauvegarde)
 ├── public/                   interface (index.html, styles.css, chart.js, app.js, sessions.js, audio.js, util.js)
+│   ├── privacy.html          modèle des mentions légales et de la confidentialité (rempli par server/site.js)
 │   └── fonts/                polices Barlow / Barlow Condensed servies localement (licence SIL OFL, OFL.txt)
 ├── tools/build-exe.js        construction de BTC-Monitor.exe (esbuild + Node SEA + postject)
 ├── test/run.js               tests (npm test)

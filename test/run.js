@@ -453,8 +453,8 @@ test('static files must stay inside the root folder (drive roots included)', () 
 });
 
 group('server (in process)');
-const httpGet = (port, p) => new Promise((resolve, reject) => {
-  const req = require('http').get({ host: '127.0.0.1', port, path: p, timeout: 5000 }, (res) => { let body = ''; res.on('data', d => { body += d; }); res.on('end', () => resolve({ status: res.statusCode, body })); });
+const httpGet = (port, p, headers) => new Promise((resolve, reject) => {
+  const req = require('http').get({ host: '127.0.0.1', port, path: p, headers, timeout: 5000 }, (res) => { let body = ''; res.on('data', d => { body += d; }); res.on('end', () => resolve({ status: res.statusCode, body, type: res.headers['content-type'] })); });
   req.on('timeout', () => req.destroy(new Error('no response for ' + p))); req.on('error', reject);
 });
 test('slow clients skip the replaceable messages, then get disconnected', () => {
@@ -511,6 +511,65 @@ test('HTTP API, static files and WebSocket routing by timeframe', async () => {
     assert.strictEqual(b.got.find(m => m.type === 'snapshot').analysis.candles.length, 2);
     b.close();
   } finally { app.close(); }
+});
+
+test('site settings: AdSense ids checked, public domain required', () => {
+  const { siteSettings } = require('../server/site');
+  const logs = [], log = (m) => logs.push(m);
+  const ok = siteSettings({ domains: 'BTCmonitor.fr, www.btcmonitor.fr.', adsense: { client: 'ca-pub-1234567890123456', slot: '9876543210' } }, log);
+  assert.deepStrictEqual(ok.domains, ['btcmonitor.fr', 'www.btcmonitor.fr']);
+  assert.deepStrictEqual(ok.adsense, { client: 'ca-pub-1234567890123456', slot: '9876543210' });
+  assert.strictEqual(logs.length, 0);
+  assert.strictEqual(siteSettings({ domains: 'a.fr', adsense: { client: 'pub-1234567890123456' } }, log).adsense.client, 'ca-pub-1234567890123456'); // as shown by AdSense
+  assert.strictEqual(siteSettings({ domains: 'a.fr', adsense: { client: 'ca-pub-12345' } }, log).adsense, null);
+  assert.strictEqual(siteSettings({ domains: 'a.fr', adsense: { client: 'ca-pub-1234567890123456', slot: '12"><script>' } }, log).adsense, null);
+  assert.strictEqual(siteSettings({ adsense: { client: 'ca-pub-1234567890123456' } }, log).adsense, null); // no domain
+  assert.strictEqual(logs.length, 3);
+  assert.strictEqual(siteSettings(undefined, log).adsense, null); // older config.js without `site`
+  assert.strictEqual(logs.length, 3);
+});
+test('public site: ads and legal link only through the domain, ads.txt, legal page', async () => {
+  const { createApp } = require('../server/http');
+  const { readStatic } = require('../server/paths');
+  const { siteSettings } = require('../server/site');
+  const icons = { serve: (name, res) => { res.writeHead(404); res.end(); } };
+  const run = async (siteCfg, fn) => {
+    const app = createApp({ engine: new Engine({}), icons, readStatic, log: () => {}, site: siteCfg && siteSettings(siteCfg, () => {}) });
+    await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+    try { await fn(app.server.address().port); } finally { app.close(); }
+  };
+  const PUB = 'ca-pub-1234567890123456';
+  await run({ domains: 'btcmonitor.fr', legal: { editor: 'Jean <Dupont>', contact: 'contact@btcmonitor.fr' }, adsense: { client: PUB, slot: '9876543210' } }, async (port) => {
+    const pub = await httpGet(port, '/?tf=5m', { Host: 'BTCmonitor.fr' });
+    assert.ok(pub.body.includes(`<meta name="google-adsense-account" content="${PUB}">`));
+    const conf = JSON.parse(/<script type="application\/json" id="btcm-site">(.*?)<\/script>/.exec(pub.body)[1]);
+    assert.deepStrictEqual(conf, { legal: '/privacy.html', adsense: { client: PUB, slot: '9876543210' } });
+    assert.ok(/\.btcm-ad\{width:300px;height:250px\}/.test(pub.body));
+    assert.ok((await httpGet(port, '/index.html', { Host: 'btcmonitor.fr:443' })).body.includes('btcm-site'));
+    assert.ok((await httpGet(port, '/', { Host: 'btc-monitor:8787', 'X-Forwarded-Host': 'btcmonitor.fr' })).body.includes('btcm-site')); // other proxies
+    // OBS, the streamer container, this computer: the plain page
+    for (const Host of ['127.0.0.1:8787', 'btc-monitor:8787', 'localhost', 'evil.btcmonitor.fr']) {
+      const page = await httpGet(port, '/', { Host });
+      assert.strictEqual(page.status, 200); assert.ok(!/btcm-site|adsbygoogle|google-adsense/.test(page.body), Host);
+    }
+    const txt = await httpGet(port, '/ads.txt');
+    assert.strictEqual(txt.body, 'google.com, pub-1234567890123456, DIRECT, f08c47fec0942fa0\n'); assert.ok(/text\/plain/.test(txt.type));
+    const legal = (await httpGet(port, '/privacy.html')).body;
+    assert.ok(legal.includes('Jean &lt;Dupont&gt;') && legal.includes('contact@btcmonitor.fr') && legal.includes('btcmonitor.fr'));
+    assert.ok(legal.includes('[à compléter : SITE_HOSTING dans .env]')); assert.ok(legal.includes('Google AdSense'));
+    assert.ok(!/\{\{|<!--\/?adsense-->/.test(legal));
+  });
+  await run({ domains: 'btcmonitor.fr' }, async (port) => { // legal notice without ads
+    const pub = await httpGet(port, '/', { Host: 'btcmonitor.fr' });
+    assert.ok(pub.body.includes('"adsense":null') && !pub.body.includes('google-adsense'));
+    assert.strictEqual((await httpGet(port, '/ads.txt')).status, 404);
+    assert.ok(!(await httpGet(port, '/privacy.html')).body.includes('AdSense'));
+  });
+  await run(null, async (port) => { // exe, tests: no site settings at all
+    assert.ok(!(await httpGet(port, '/', { Host: 'btcmonitor.fr' })).body.includes('btcm-site'));
+    assert.strictEqual((await httpGet(port, '/ads.txt')).status, 404);
+    assert.ok((await httpGet(port, '/privacy.html')).body.includes('[à compléter : SITE_EDITOR dans .env]'));
+  });
 });
 
 group('server (integration)');

@@ -307,6 +307,36 @@ window.BTCM_APP = (function () {
     $('liveBtn').addEventListener('click', () => setAnchor(null));
   }
 
+  // ------------------------------------------------------------------ public website (server/site.js)
+  // The server adds its settings to the page for the visitors of the public domain only. None of it in OBS
+  // (window.obsstudio) nor with ?ads=0 (added by the streamer container): a stream must never show ads, impressions
+  // made by a machine are invalid traffic for AdSense.
+  function initSite() {
+    const el = document.getElementById('btcm-site');
+    if (!el || window.obsstudio || new URLSearchParams(location.search).get('ads') === '0') return;
+    let site; try { site = JSON.parse(el.textContent); } catch (e) { return; }
+    if (site.legal) { // in the status bar; narrow screens: next to the timeframe buttons (styles.css)
+      for (const [parent, before] of [[document.querySelector('.statusline'), null], [document.querySelector('.liqrow'), $('tfSwitch')]]) {
+        const a = document.createElement('a');
+        a.className = 'legal'; a.href = site.legal; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Legal · Privacy';
+        parent.insertBefore(a, before);
+      }
+    }
+    const ad = site.adsense;
+    if (!ad) return;
+    const s = document.createElement('script');
+    s.async = true; s.crossOrigin = 'anonymous'; s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + encodeURIComponent(ad.client);
+    document.head.appendChild(s);
+    if (!ad.slot) return; // no ad unit yet (site review)
+    // ad unit at the bottom of the left column (phones: under the chart), its exact size per screen width set by the server
+    const main = document.querySelector('.main'), box = document.createElement('div'), ins = document.createElement('ins');
+    box.className = 'adbox'; box.innerHTML = '<div class="adlabel">Advertisements</div>';
+    ins.className = 'adsbygoogle btcm-ad'; ins.style.display = 'inline-block'; ins.dataset.adClient = ad.client; ins.dataset.adSlot = ad.slot;
+    box.appendChild(ins); main.appendChild(box); main.classList.add('withad');
+    if (!ins.offsetWidth || ins.offsetWidth > box.clientWidth) { box.remove(); main.classList.remove('withad'); return; } // no room on this screen
+    (window.adsbygoogle = window.adsbygoogle || []).push({});
+  }
+
   // ------------------------------------------------------------------ render loop
   function loop() {
     if (dirty) { dirty = false; try { chart.render(); osc.hoverT = chart.hoverT; osc.render(); requestHeat(); } catch (e) { console.error(e); } }
@@ -320,6 +350,7 @@ window.BTCM_APP = (function () {
     // the canvases draw with Barlow Condensed: load its weights explicitly, then redraw
     if (document.fonts && document.fonts.load) Promise.all([500, 600, 700].map(w => document.fonts.load(`${w} 12px "Barlow Condensed"`))).then(() => { dirty = true; }, () => {});
     renderLogo();
+    try { initSite(); } catch (e) { console.error(e); } // never at the expense of the dashboard
     initNavigation();
     // zoom with the mouse wheel
     $('chartwrap').addEventListener('wheel', (e) => { e.preventDefault(); const v = Math.round(chart.visible * (e.deltaY > 0 ? 1.15 : 0.87)); chart.visible = osc.visible = Math.max(40, Math.min(state.candles.length || 900, v)); dirty = true; }, { passive: false });

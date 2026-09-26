@@ -28,6 +28,7 @@ const { startCalendar } = require('./calendar');
 const { startAssets } = require('./assets');
 const { startClock } = require('./clock');
 const { createApp } = require('./http');
+const { siteSettings } = require('./site');
 const { IconStore } = require('./icons');
 const feeds = require('./feeds');
 
@@ -79,7 +80,9 @@ setInterval(saveHeatmap, 5 * 60000);
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { saveLiquidations(); saveHeatmap(); process.exit(0); });
 
 // ---------------------------------------------------------------- HTTP static + API + WebSocket (server/http.js)
-const { server } = createApp({ engine, icons, readStatic, log: mainLog });
+const site = siteSettings(config.site, log('site'));
+if (site.adsense) log('site')(`AdSense ${site.adsense.client}${site.adsense.slot ? ` (ad unit ${site.adsense.slot})` : ''} for the visitors of ${site.domains.join(', ')}`);
+const { server } = createApp({ engine, icons, readStatic, log: mainLog, site });
 
 // ---------------------------------------------------------------- data sources
 async function startLive() {

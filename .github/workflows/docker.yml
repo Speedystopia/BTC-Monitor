@@ -27,9 +27,15 @@ jobs:
       - name: Dashboard answers, streamer goes on air
         run: |
           docker network create btcm-ci
-          docker run -d --name btc-monitor --network btcm-ci -p 127.0.0.1:8787:8787 btc-monitor
+          docker run -d --name btc-monitor --network btcm-ci -p 127.0.0.1:8787:8787 \
+            -e DOMAIN=btcmonitor.example -e ADSENSE_CLIENT=ca-pub-1234567890123456 -e ADSENSE_SLOT=1234567890 btc-monitor
           for i in $(seq 30); do curl -fs -o /dev/null http://127.0.0.1:8787/api/health && break; sleep 2; done
           curl -fsS -o /dev/null http://127.0.0.1:8787/
+          # .env settings reach the page: ads for the visitors of the domain only, ads.txt, legal page
+          curl -fsS -H 'Host: btcmonitor.example' http://127.0.0.1:8787/ | grep 'content="ca-pub-1234567890123456"'
+          test "$(curl -fsS http://127.0.0.1:8787/ | grep -c 'ca-pub-')" = 0
+          curl -fsS http://127.0.0.1:8787/ads.txt | grep 'google.com, pub-1234567890123456, DIRECT'
+          curl -fsS http://127.0.0.1:8787/privacy.html | grep 'Google AdSense'
           mkdir -m 777 out
           docker run -d --name rtmp --network btcm-ci -v "$PWD/out:/out" --entrypoint ffmpeg btc-monitor-streamer \
             -hide_banner -loglevel warning -listen 1 -i rtmp://0.0.0.0:1935/live/ci-key -c copy -f flv /out/ci.flv

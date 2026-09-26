@@ -137,6 +137,25 @@ module.exports = {
     reversal: true,              // confirmed possible reversal
   },
 
+  // Public website on a server (Docker: fill these in .env, see README "Publicité"). Only the visitors who
+  // come through `domains` get the legal link and the ads: OBS, the stream and this computer open the
+  // dashboard by another address and never show ads (impressions made by a machine are invalid traffic).
+  site: {
+    domains: process.env.DOMAIN || '',              // the site's domain name(s), e.g. 'btcmonitor.fr'
+    // legal notice and privacy page /privacy.html (public/privacy.html): required in France and by AdSense
+    legal: {
+      editor: process.env.SITE_EDITOR || '',        // your name (or company) and postal address
+      contact: process.env.SITE_CONTACT || '',      // e-mail address (and phone number)
+      hosting: process.env.SITE_HOSTING || '',      // hosting company: name, address, phone number
+    },
+    // Google AdSense: publisher id ca-pub-... (empty = no ads) and the display ad unit id shown
+    // under the order-book feed (phones: under the chart)
+    adsense: {
+      client: process.env.ADSENSE_CLIENT || '',
+      slot: process.env.ADSENSE_SLOT || '',
+    },
+  },
+
   // Optional: HTTP(S) proxy for outbound connections (corporate networks).
   // Leave empty to connect directly. Example: 'http://127.0.0.1:8080'
   proxy: process.env.HTTPS_PROXY || '',
