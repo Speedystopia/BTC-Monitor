@@ -87,7 +87,8 @@ pare-feu, puis utiliser `http://<adresse IP du PC qui fait tourner BTC Monitor>:
 
 ### Sur un serveur : adresse web et direct YouTube / Twitch 24 h/24 (Docker)
 
-Sur un serveur loué (VPS Linux avec [Docker](https://docs.docker.com/engine/install/)), sans PC allumé :
+Sur un serveur loué (VPS Linux avec [Docker](https://docs.docker.com/engine/install/)), sans PC allumé.
+**Guide pas à pas** (VPS, domaine, sécurité, direct, publicité) : [docs/serveur-vps.md](docs/serveur-vps.md).
 
 ```bash
 git clone https://github.com/Speedystopia/BTC-Monitor.git && cd BTC-Monitor
@@ -230,6 +231,7 @@ btc-monitor/
 ├── public/                   interface (index.html, styles.css, chart.js, app.js, sessions.js, audio.js, util.js)
 │   ├── privacy.html          modèle des mentions légales et de la confidentialité (rempli par server/site.js)
 │   └── fonts/                polices Barlow / Barlow Condensed servies localement (licence SIL OFL, OFL.txt)
+├── docs/serveur-vps.md       guide de mise en ligne sur un VPS (domaine, HTTPS, direct, AdSense)
 ├── tools/build-exe.js        construction de BTC-Monitor.exe (esbuild + Node SEA + postject)
 ├── test/run.js               tests (npm test)
 └── .github/workflows/ci.yml  intégration continue (tests sur Node 18 à 24)
